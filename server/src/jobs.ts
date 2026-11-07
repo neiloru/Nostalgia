@@ -5,7 +5,7 @@ import { now } from './db.js';
 import type { Library, ScanResult, UnsortedFile } from './library.js';
 import { resolveInside, walkFiles } from './library.js';
 import type { Igdb } from './igdb.js';
-import { hashFile, lookupHasheous, shouldHash, type HasheousResult } from './hasheous.js';
+import { hashFile, lookupHasheous, shouldHash, type FileHashes, type HasheousResult } from './hasheous.js';
 import type { EventHub } from './events.js';
 import { log } from './log.js';
 
@@ -137,12 +137,18 @@ export class Jobs {
         const dir = this.library.gameDir(row);
         for (const f of walkFiles(dir).filter((x) => shouldHash(x.path))) {
           const known = this.db
-            .prepare('SELECT size, mtime, hasheous_status FROM file_hashes WHERE game_id = ? AND rel_path = ?')
-            .get(id, f.path) as { size: number; mtime: number; hasheous_status: string } | undefined;
-          if (known && known.size === f.size && known.mtime === f.mtime && known.hasheous_status !== 'error') continue;
+            .prepare('SELECT size, mtime, md5, sha1, crc32, hasheous_status FROM file_hashes WHERE game_id = ? AND rel_path = ?')
+            .get(id, f.path) as { size: number; mtime: number; md5: string; sha1: string; crc32: string; hasheous_status: string } | undefined;
+          const unchanged = known && known.size === f.size && known.mtime === f.mtime && known.md5;
+          if (unchanged && known.hasheous_status !== 'error') continue;
           h.current = `${row.folder}/${f.path}`;
-          h.bytesTotal += f.size;
-          const hashes = await hashFile(path.join(dir, f.path), (n) => (h.bytesDone += n));
+          // Only the lookup failed last time: reuse the stored hashes instead of reading the file again.
+          let hashes: FileHashes;
+          if (unchanged) hashes = { md5: known.md5, sha1: known.sha1, crc32: known.crc32 };
+          else {
+            h.bytesTotal += f.size;
+            hashes = await hashFile(path.join(dir, f.path), (n) => (h.bytesDone += n));
+          }
           const res = await lookupHasheous(hashes);
           this.db
             .prepare(

@@ -54,27 +54,41 @@ interface HasheousResponse {
   metadata?: { source?: string; id?: string; status?: string }[];
 }
 
+async function query(body: Record<string, string>, timeoutMs: number): Promise<HasheousResult> {
+  const res = await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (res.status === 404) return { status: 'nomatch' };
+  if (!res.ok) return { status: 'error', error: `HTTP ${res.status}` };
+  const j = (await res.json()) as HasheousResponse;
+  const igdb = j.metadata?.find((m) => m.source === 'IGDB' && m.id);
+  return {
+    status: 'match',
+    name: j.name,
+    platform: j.platform?.name,
+    igdbId: igdb?.id ? Number(igdb.id) : undefined,
+    romName: j.signature?.rom?.name,
+    source: j.signature?.rom?.signatureSource,
+    raw: { name: j.name, platform: j.platform?.name, rom: j.signature?.rom, metadata: j.metadata },
+  };
+}
+
+/**
+ * Look a file up by hash. MD5 alone is answered quickly by hasheous.org, combined
+ * hash queries can be very slow - so MD5 first and SHA1 only as a fallback.
+ */
 export async function lookupHasheous(h: FileHashes): Promise<HasheousResult> {
   try {
-    const res = await fetch(API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ md5: h.md5, sha1: h.sha1, crc: h.crc32 }),
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (res.status === 404) return { status: 'nomatch' };
-    if (!res.ok) return { status: 'error', error: `HTTP ${res.status}` };
-    const j = (await res.json()) as HasheousResponse;
-    const igdb = j.metadata?.find((m) => m.source === 'IGDB' && m.id);
-    return {
-      status: 'match',
-      name: j.name,
-      platform: j.platform?.name,
-      igdbId: igdb?.id ? Number(igdb.id) : undefined,
-      romName: j.signature?.rom?.name,
-      source: j.signature?.rom?.signatureSource,
-      raw: { name: j.name, platform: j.platform?.name, rom: j.signature?.rom, metadata: j.metadata },
-    };
+    const first = await query({ md5: h.md5 }, 120_000);
+    if (first.status !== 'nomatch') return first;
+    try {
+      return await query({ sha1: h.sha1 }, 120_000);
+    } catch {
+      return first;
+    }
   } catch (e) {
     log.warn(`Hasheous lookup failed: ${(e as Error).message}`);
     return { status: 'error', error: (e as Error).message };

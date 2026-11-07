@@ -1,0 +1,24 @@
+appId: app.nostalgia.client
+productName: Nostalgia
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - package.json
+asar: true
+win:
+  target:
+    - target: nsis
+    - target: portable
+  artifactName: Nostalgia-${version}-${arch}-${target}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+linux:
+  # AppImage runs on SteamOS without touching the read-only system partition.
+  target:
+    - AppImage
+    - tar.gz
+  category: Game
+  artifactName: Nostalgia-${version}-${arch}.${ext}

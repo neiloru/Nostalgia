@@ -97,6 +97,7 @@ tr:hover td { background: #1f232b; }
 .progress > div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
 .kv { display: grid; grid-template-columns: 160px 1fr; gap: 6px 14px; }
 .kv div:nth-child(odd) { color: var(--muted); }
+.kv div { min-width: 0; overflow-wrap: anywhere; }
 .empty { padding: 40px; text-align: center; color: var(--muted); }
 @media (max-width: 800px) {
   #app { grid-template-columns: 1fr; }
