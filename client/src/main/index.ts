@@ -45,6 +45,7 @@ function createWindow() {
     backgroundColor: '#0f1116',
     autoHideMenuBar: true,
     title: 'Nostalgia',
+    icon: path.join(app.getAppPath(), 'resources', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,

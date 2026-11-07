@@ -6,18 +6,24 @@ directories:
   buildResources: build
 files:
   - out/**
+  - resources/**
   - package.json
+icon: build/icon.png
 asar: true
 win:
+  icon: build/icon.ico
   target:
     - target: nsis
     - target: portable
   artifactName: Nostalgia-${version}-${arch}-${target}.${ext}
 nsis:
   oneClick: false
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
   allowToChangeInstallationDirectory: true
 linux:
   executableName: nostalgia
+  icon: build/icons
   desktop:
     entry:
       StartupWMClass: nostalgia

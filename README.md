@@ -140,6 +140,7 @@ npm install
 npm run client:dev                 # development (hot reload)
 npm run dist:win  -w client        # Windows installer + portable exe  -> client/release
 npm run dist:linux -w client       # AppImage + tar.gz (build on Linux)  -> client/release
+npm run icons -w client            # re-render build/icon.{png,ico} from build/icon.svg
 ```
 
 The GitHub Actions workflow in `.github/workflows/build.yml` builds the Windows installer, the
@@ -179,6 +180,17 @@ Linux AppImage and the server bundle.
   not installed are greyed out and an offline notice is shown. Installed games keep their
   covers, artwork and store pages and can be played. Play time and saves are uploaded when the
   server is reachable again.
+
+### Launch parameters
+
+| parameter | effect |
+| --- | --- |
+| `--fullscreen` | start in fullscreen |
+| `--windowed` | start in a window (overrides the "Start in fullscreen" setting) |
+| *(none)* | uses Settings → Display → *Start in fullscreen* (on by default inside Steam Deck Game Mode / gamescope) |
+
+F11 toggles fullscreen at any time. Example for Steam: set the launch options of the
+non-Steam shortcut to `--fullscreen`.
 
 ### Controls
 
