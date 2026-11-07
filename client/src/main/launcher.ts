@@ -96,6 +96,8 @@ export class Launcher {
         home: this.core.opts.home,
         documents: this.core.opts.documents,
         appData: this.core.opts.appData,
+        config: process.env.XDG_CONFIG_HOME ?? path.join(this.core.opts.home, '.config'),
+        dataHome: process.env.XDG_DATA_HOME ?? path.join(this.core.opts.home, '.local', 'share'),
         disc: opts.disc,
       },
       env: process.env,

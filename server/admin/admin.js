@@ -509,7 +509,7 @@ systems:
     executable: emulator.exe
     arguments: ["-fullscreen", "{rom}"]
     saves:
-      - "%USERPROFILE%/Documents/Emulator/saves"
+      - "{documents}/Emulator/saves"
   linux:
     executable: emulator.AppImage
     arguments: ["-fullscreen", "{rom}"]
@@ -522,6 +522,10 @@ systems:
   {gameDir}      installed game folder
   {emulatorDir}  installed emulator folder
   {home}         user home folder
+  {documents}    the user's Documents folder (handles OneDrive redirection)
+  {appData}      %APPDATA% on Windows, ~/.config on Linux
+  {config}       $XDG_CONFIG_HOME or ~/.config
+  {dataHome}     $XDG_DATA_HOME or ~/.local/share
 Environment variables: %USERPROFILE%, %APPDATA%, $HOME, \${XDG_CONFIG_HOME}, ~
 arguments may be a list or a single string ("-nogui -fullscreen \\"{rom}\\"").
 saves: one or more folders - their content is uploaded as a versioned cloud save

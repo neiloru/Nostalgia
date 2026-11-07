@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "description": "Nostalgia - retro game launcher with cloud saves",
   "author": "Nostalgia",
+  "desktopName": "nostalgia.desktop",
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {

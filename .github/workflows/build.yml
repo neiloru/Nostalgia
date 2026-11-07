@@ -1,0 +1,62 @@
+name: build
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  client:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            target: dist:win
+          - os: ubuntu-latest
+            target: dist:linux # AppImage for SteamOS / Linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run ${{ matrix.target }} -w client
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nostalgia-client-${{ matrix.os }}
+          path: |
+            client/release/*.exe
+            client/release/*.AppImage
+            client/release/*.tar.gz
+
+  server:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nostalgia-server
+          path: server/dist

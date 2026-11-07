@@ -1,5 +1,6 @@
 appId: app.nostalgia.client
 productName: Nostalgia
+executableName: Nostalgia
 directories:
   output: release
   buildResources: build
@@ -16,6 +17,10 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
 linux:
+  executableName: nostalgia
+  desktop:
+    entry:
+      StartupWMClass: nostalgia
   # AppImage runs on SteamOS without touching the read-only system partition.
   target:
     - AppImage

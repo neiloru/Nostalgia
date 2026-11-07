@@ -10,7 +10,7 @@ systems:
     arguments: -nogui -fullscreen "{rom}"
     # Folder(s) uploaded as a versioned cloud save after the emulator closes.
     saves:
-      - "%USERPROFILE%/Documents/PCSX2/memcards"
+      - "{documents}/PCSX2/memcards"
   linux:
     # Put the PCSX2 AppImage into the emulator folder under this name.
     executable: pcsx2.AppImage

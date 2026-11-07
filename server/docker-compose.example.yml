@@ -1,0 +1,12 @@
+services:
+  nostalgia:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config:/config          # settings.yaml (created on first start)
+      - /path/to/library:/library # games/{platform}/... and emulators/{platform}/...
+      - ./data:/data              # database + versioned cloud saves (back this up!)
+    restart: unless-stopped
