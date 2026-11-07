@@ -1,0 +1,15 @@
+{
+  "name": "nostalgia",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Retro game library server + launcher client with cloud saves",
+  "workspaces": ["shared", "server", "client"],
+  "scripts": {
+    "build": "npm run build -w server && npm run build -w client",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w client",
+    "server": "npm run start -w server",
+    "server:dev": "npm run dev -w server",
+    "client:dev": "npm run dev -w client",
+    "test": "npm run test -w server"
+  }
+}

@@ -1,0 +1,19 @@
+# emu.yaml - tells the Nostalgia client how to run this emulator and where its saves live.
+name: PCSX2
+description: PlayStation 2 emulator
+# Launchable extensions in priority order. For multi-disc games every file
+# with the first matching extension becomes a selectable disc.
+extensions: [m3u, chd, iso, cso, zso, gz, cue, bin]
+systems:
+  windows:
+    executable: pcsx2-qt.exe
+    arguments: -nogui -fullscreen "{rom}"
+    # Folder(s) uploaded as a versioned cloud save after the emulator closes.
+    saves:
+      - "%USERPROFILE%/Documents/PCSX2/memcards"
+  linux:
+    # Put the PCSX2 AppImage into the emulator folder under this name.
+    executable: pcsx2.AppImage
+    arguments: ["-nogui", "-fullscreen", "{rom}"]
+    saves:
+      - "~/.config/PCSX2/memcards"

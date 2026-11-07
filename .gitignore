@@ -1,0 +1,12 @@
+node_modules/
+dist/
+out/
+release/
+# test data & local secrets
+Resources/
+devlib/
+devdata/
+igdb.txt
+settings.yaml
+server/settings.yaml
+*.log

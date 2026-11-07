@@ -1,0 +1,26 @@
+{
+  "name": "@nostalgia/server",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Nostalgia server: game library, downloads, users, versioned cloud saves and admin web UI",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/server.js",
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile=dist/server.js && node scripts/copy-admin.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test --import tsx test/*.test.ts"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@nostalgia/shared": "*",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}
