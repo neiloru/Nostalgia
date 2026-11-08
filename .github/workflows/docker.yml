@@ -1,0 +1,113 @@
+name: Docker image
+
+# Manual only: Actions → "Docker image" → Run workflow.
+# Publishes ghcr.io/<owner>/nostalgia-server with the tags "latest" (main branch only),
+# "sha-<commit>" and the optional extra tag.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Extra tag, e.g. 1.0.0 (optional)
+        required: false
+        default: ''
+      platforms:
+        description: Architectures
+        type: choice
+        options:
+          - linux/amd64,linux/arm64
+          - linux/amd64
+        default: linux/amd64,linux/arm64
+      push:
+        description: Push to ghcr.io (off = build and test only)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Image name (registry names must be lowercase)
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/nostalgia-server" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+
+      # 1. Build for the runner's architecture and start the container before anything is pushed.
+      - name: Build test image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: server/Dockerfile
+          load: true
+          tags: nostalgia-server:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test
+        run: |
+          set -e
+          mkdir -p /tmp/nostalgia/config /tmp/nostalgia/library /tmp/nostalgia/data
+          docker run -d --name nostalgia -p 8080:8080 \
+            -v /tmp/nostalgia/config:/config -v /tmp/nostalgia/library:/library -v /tmp/nostalgia/data:/data \
+            nostalgia-server:test
+          ok=
+          for i in $(seq 1 30); do
+            if curl -fs http://127.0.0.1:8080/api/health; then ok=1; break; fi
+            sleep 1
+          done
+          echo
+          docker logs nostalgia
+          [ -n "$ok" ]
+          curl -fs -o /dev/null http://127.0.0.1:8080/admin/
+          test -f /tmp/nostalgia/config/settings.yaml   # template written on first start
+          test -d /tmp/nostalgia/library/games/psx      # RomM platform folders created
+          for i in $(seq 1 60); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' nostalgia)
+            [ "$status" = healthy ] && break
+            sleep 2
+          done
+          echo "health: $status"
+          [ "$status" = healthy ]
+          docker rm -f nostalgia
+
+      # 2. Multi-arch build (reuses the cache from step 1) and push.
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: server/Dockerfile
+          platforms: ${{ inputs.platforms }}
+          push: ${{ inputs.push }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          {
+            echo "### Docker image"
+            if [ "${{ inputs.push }}" = "true" ]; then echo "Pushed (${{ inputs.platforms }}):"; else echo "Built only, not pushed:"; fi
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

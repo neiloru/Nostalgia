@@ -63,8 +63,30 @@ npm run server:dev            # uses ./server/settings.yaml
 When the settings file is missing, a template is written on first start. Then open
 `http://<server>:8080/admin`.
 
-A Docker image is described in [`server/Dockerfile`](server/Dockerfile) (see
-[`server/docker-compose.example.yml`](server/docker-compose.example.yml)).
+### Docker
+
+Image: `ghcr.io/neiloru/nostalgia-server` (`linux/amd64` and `linux/arm64`, published by the
+*Docker image* workflow). Use [`server/docker-compose.example.yml`](server/docker-compose.example.yml):
+
+```bash
+mkdir nostalgia && cd nostalgia
+curl -o docker-compose.yml https://raw.githubusercontent.com/neiloru/Nostalgia/main/server/docker-compose.example.yml
+# set the library path in docker-compose.yml, then:
+docker compose up -d
+# edit ./config/settings.yaml (created on first start, at least adminPassword), then:
+docker compose restart
+```
+
+| volume | content |
+| --- | --- |
+| `/config` | `settings.yaml` |
+| `/library` | `games/{platform}/…` and `emulators/{platform}/…` |
+| `/data` | database and versioned cloud saves. **Back this up.** |
+
+Library and data paths are fixed by the image (`NOSTALGIA_LIBRARY`, `NOSTALGIA_DATA`), so leave
+`libraryDirectory` / `dataDirectory` in settings.yaml as they are. Update with
+`docker compose pull && docker compose up -d`. To build the image yourself from a clone, run
+`docker build -f server/Dockerfile -t nostalgia-server .` in the repository root.
 
 ### Settings (`settings.yaml`)
 
@@ -261,10 +283,13 @@ run first; the files are attached to the run as artifacts.
 | --- | --- | --- |
 | [Client build](.github/workflows/client.yml) | `Nostalgia-x.y.z-x64-setup.exe` (installer), `Nostalgia-x.y.z-x64-portable.exe` | `Nostalgia-x.y.z-*.AppImage`, `Nostalgia-x.y.z-*.tar.gz` |
 | [Server build](.github/workflows/server.yml) | `nostalgia-server-x.y.z-windows-x64.zip` | `nostalgia-server-x.y.z-linux-x64.tar.gz` |
+| [Docker image](.github/workflows/docker.yml) | | `ghcr.io/neiloru/nostalgia-server` (`latest`, `sha-…`, optional extra tag) |
 
 Server packages contain the bundled server, the admin UI, a Node.js runtime, a start script
 and `settings.example.yaml`. The Linux server package is started and checked in CI before it
-is uploaded.
+is uploaded. The Docker workflow starts the container and waits for its healthcheck before it
+pushes. After the first push, set the package to *Public* (GitHub → profile → *Packages* →
+nostalgia-server → *Package settings*) so `docker pull` works without logging in.
 
 ---
 

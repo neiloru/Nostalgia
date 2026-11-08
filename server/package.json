@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "node dist/server.js",
-    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node22 --external:express --external:yaml --outfile=dist/server.js && node scripts/copy-admin.mjs",
+    "build": "node scripts/build.mjs",
     "package": "node scripts/package.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test --import tsx test/*.test.ts"

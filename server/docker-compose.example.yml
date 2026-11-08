@@ -1,12 +1,30 @@
+# Nostalgia server with Docker Compose.
+#   1. Copy this file to an empty folder as docker-compose.yml and adjust the library path.
+#   2. docker compose up -d
+#   3. Edit ./config/settings.yaml (created on first start; at least adminPassword),
+#      then: docker compose restart
+#   Admin UI: http://<host>:8080/admin   Clients connect to http://<host>:8080
 services:
   nostalgia:
-    build:
-      context: ..
-      dockerfile: server/Dockerfile
+    image: ghcr.io/neiloru/nostalgia-server:latest
+    # Or build from a clone of the repository instead of pulling (run from the server/ folder):
+    # build:
+    #   context: ..
+    #   dockerfile: server/Dockerfile
+    container_name: nostalgia
     ports:
       - "8080:8080"
+    # Optional: timezone for log timestamps, IGDB credentials instead of in settings.yaml
+    # environment:
+    #   TZ: Europe/Berlin
+    #   IGDB_CLIENT_ID: "..."
+    #   IGDB_CLIENT_SECRET: "..."
     volumes:
-      - ./config:/config          # settings.yaml (created on first start)
-      - /path/to/library:/library # games/{platform}/... and emulators/{platform}/...
-      - ./data:/data              # database + versioned cloud saves (back this up!)
+      - ./config:/config            # settings.yaml
+      - /path/to/library:/library   # games/{platform}/... and emulators/{platform}/...
+      - ./data:/data                # database + versioned cloud saves (back this up!)
+    # Files the server creates in the library (platform folders, igdb/ artwork) belong to
+    # this user. Uncomment and set your own UID:GID to avoid root-owned files; create ./config
+    # and ./data first (mkdir config data) so that this user can write to them.
+    # user: "1000:1000"
     restart: unless-stopped

@@ -7,13 +7,11 @@
 // and archives it as .zip (Windows) or .tar.gz (Linux / SteamOS).
 //
 // Usage: node scripts/package.mjs [--no-runtime]
-import { build } from 'esbuild';
+import { bundle, copyAdmin, root } from './build.mjs';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repo = path.resolve(root, '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const withRuntime = !process.argv.includes('--no-runtime');
@@ -26,21 +24,11 @@ const out = path.join(releaseDir, name);
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
 
-// 1. Bundle everything (express and yaml included). Bundled CommonJS dependencies call
-//    require() for Node built-ins, which needs a real require inside an ES module.
-await build({
-  entryPoints: [path.join(root, 'src', 'index.ts')],
-  bundle: true,
-  platform: 'node',
-  format: 'esm',
-  target: 'node22',
-  outfile: path.join(out, 'server.js'),
-  banner: { js: "import { createRequire as __nostalgiaRequire } from 'node:module'; const require = __nostalgiaRequire(import.meta.url);" },
-  logLevel: 'warning',
-});
+// 1. Fully bundled server (express and yaml included).
+await bundle(path.join(out, 'server.js'));
 
 // 2. Admin UI, example settings, license.
-fs.cpSync(path.join(root, 'admin'), path.join(out, 'admin'), { recursive: true });
+copyAdmin(out);
 fs.copyFileSync(path.join(root, 'settings.example.yaml'), path.join(out, 'settings.example.yaml'));
 fs.copyFileSync(path.join(repo, 'LICENSE'), path.join(out, 'LICENSE'));
 

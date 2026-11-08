@@ -1,0 +1,21 @@
+# Only what server/Dockerfile needs: root package files, shared/, server/ and client/package.json
+# (the lock file covers all workspaces). Keeps game files, builds and secrets out of the image.
+**/node_modules
+**/dist
+**/out
+**/release
+.git
+.github
+Resources
+devlib
+devdata
+docs
+examples
+client/*
+!client/package.json
+server/data
+server/library
+server/test
+**/settings.yaml
+igdb.txt
+*.log
