@@ -130,27 +130,6 @@ const ICONS = {
       <path d="m16 17 5-5-5-5M21 12H9" />
     </>
   ),
-  grid: (
-    <>
-      <rect x="4" y="4" width="7" height="7" rx="1.5" />
-      <rect x="13" y="4" width="7" height="7" rx="1.5" />
-      <rect x="4" y="13" width="7" height="7" rx="1.5" />
-      <rect x="13" y="13" width="7" height="7" rx="1.5" />
-    </>
-  ),
-  library: (
-    <>
-      <path d="M5 4v16" />
-      <path d="M9 4v16" />
-      <path d="m13.5 5.5 4-1 3 15-4 1z" />
-    </>
-  ),
-  user: (
-    <>
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 21a8 8 0 0 1 16 0" />
-    </>
-  ),
   star: <path d="m12 3 2.8 5.8 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 3 1.1-6.2L3 9.7l6.2-.9z" />,
 };
 

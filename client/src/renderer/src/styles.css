@@ -48,33 +48,32 @@ h3 { font-size: 13px; margin: 22px 0 10px; color: var(--muted); font-weight: 600
 html[data-input='keyboard'] :focus,
 html[data-input='gamepad'] :focus { outline: var(--ring) solid var(--focus); outline-offset: 3px; }
 /* Rows inside scrolling lists get an inset ring so it is never clipped. */
-html[data-input='keyboard'] :is(.lib-item, .option, .link-row, .rail-item, .toggle, .select):focus,
-html[data-input='gamepad'] :is(.lib-item, .option, .link-row, .rail-item, .toggle, .select):focus { outline-offset: calc(var(--ring) * -1); background: var(--surface-3); color: var(--text); }
+html[data-input='keyboard'] :is(.lib-item, .option, .link-row, .toggle, .select):focus,
+html[data-input='gamepad'] :is(.lib-item, .option, .link-row, .toggle, .select):focus { outline-offset: calc(var(--ring) * -1); background: var(--surface-3); color: var(--text); }
 /* Text fields show focus on their wrapper. */
 html[data-input] .search input:focus { outline: none; }
 button, input, [tabindex] { scroll-margin: 24px; }
 
 /* ---------- shell ---------- */
-.shell { display: grid; grid-template-columns: 220px 1fr; height: 100%; }
+.shell { display: flex; flex-direction: column; height: 100%; }
+.shell > .content { flex: 1; }
 .splash { height: 100%; background: var(--bg); }
-.main-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.main-col > .content { flex: 1; }
 .content { overflow: hidden; position: relative; min-height: 0; }
 
-.rail { display: flex; flex-direction: column; justify-content: space-between; gap: 16px; padding: 20px 12px 14px; background: var(--surface); border-right: 1px solid var(--line); min-height: 0; }
-.rail-tabs, .rail-foot { display: grid; gap: 4px; }
-.rail-item { display: flex; align-items: center; gap: 14px; width: 100%; height: 48px; padding: 0 14px; background: none; border: 0; border-radius: var(--radius); color: var(--muted); font-size: 15.5px; font-weight: 500; text-align: left; cursor: pointer; position: relative; }
-.rail-item:hover { color: var(--text); background: var(--surface-2); }
-.rail-item.active { color: var(--text); background: var(--surface-2); }
-.rail-item.active::before { content: ''; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 0 3px 3px 0; background: var(--text); }
-.rail-item svg { flex: none; }
-.rail-label { flex: 1; min-width: 0; display: grid; }
-.rail-badge { font-size: 12px; font-weight: 600; color: var(--info); font-variant-numeric: tabular-nums; }
-.rail-item.offline { color: var(--err); }
-.rail-user { display: flex; align-items: center; gap: 14px; padding: 10px 14px 4px; margin-top: 6px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
-.rail-user svg { flex: none; }
-.rail-user .rail-label > :first-child { color: var(--text); font-weight: 500; }
-.rail-user small { font-size: 12px; color: var(--faint); }
+.topbar { display: flex; align-items: center; gap: 24px; padding: 0 24px; height: 64px; background: var(--bg); border-bottom: 1px solid var(--line); flex: none; }
+.tabs { display: flex; align-items: center; gap: 4px; flex: 1; }
+.tab { display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 16px; background: none; border: 0; border-radius: var(--radius); color: var(--muted); font-size: 16px; font-weight: 500; cursor: pointer; position: relative; }
+.tab:hover { color: var(--text); background: var(--surface-2); }
+.tab.active { color: var(--text); }
+.tab.active::after { content: ''; position: absolute; left: 16px; right: 16px; bottom: -11px; height: 2px; background: var(--text); }
+.tab-badge { font-size: 12px; font-weight: 600; color: var(--info); font-variant-numeric: tabular-nums; }
+.pad-hint { display: none; font-size: 11px; font-weight: 600; color: var(--muted); border: 1.5px solid var(--faint); border-radius: 99px; padding: 3px 8px; }
+.input-gamepad .pad-hint { display: inline-block; }
+.pad-hint:first-child { margin-right: 6px; }
+.tabs .tab + .pad-hint { margin-left: 6px; }
+.topbar-right { display: flex; gap: 12px; align-items: center; }
+.user-name { color: var(--muted); font-size: 14px; }
+.offline-btn { color: var(--err); }
 
 .hintbar { display: flex; gap: 22px; align-items: center; padding: 0 24px; height: 44px; font-size: 13.5px; color: var(--muted); border-top: 1px solid var(--line); background: var(--bg); transition: opacity .2s; flex: none; }
 .hintbar.dim { opacity: .5; }
@@ -317,11 +316,6 @@ h2.sub { margin-top: 34px; color: var(--muted); }
 ::-webkit-scrollbar-track { background: transparent; }
 
 @media (max-width: 1100px) {
-  .shell { grid-template-columns: 72px 1fr; }
-  .rail { padding-left: 10px; padding-right: 10px; }
-  .rail-item { justify-content: center; padding: 0; }
-  .rail-label, .rail-badge { display: none; }
-  .rail-user { justify-content: center; padding: 10px 0 4px; }
   .vault { grid-template-columns: 230px 1fr; }
   .store-body { grid-template-columns: 1fr; }
   .library { grid-template-columns: 260px 1fr; }
