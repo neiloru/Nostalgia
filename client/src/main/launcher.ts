@@ -119,6 +119,9 @@ export class Launcher {
     // AppImages launched from inside an AppImage must not inherit our mount variables.
     delete env.APPIMAGE;
     delete env.APPDIR;
+    // Started from Steam, the Linux launcher keeps Steam's overlay out of Electron; emulators get it back.
+    if (env.NOSTALGIA_LD_PRELOAD) env.LD_PRELOAD = env.NOSTALGIA_LD_PRELOAD;
+    delete env.NOSTALGIA_LD_PRELOAD;
 
     const startedAt = new Date();
     const name = this.core.game(gameId)?.name ?? inst.name;

@@ -211,6 +211,12 @@ Prebuilt clients come from the *Client build* workflow, see [Builds](#builds).
 4. Put Linux builds of the emulators (AppImages) in the emulator folders on the server and
    reference them in `systems.linux` of the emu.yaml.
 
+Started from Steam (or inside gamescope), the Linux launcher turns off Chromium's sandbox, keeps
+Steam's overlay library out of Electron (emulators still get it) and uses X11; otherwise Electron
+crashes on startup there. Its output is written to `~/.config/Nostalgia/logs/launch.log`
+(the run before: `launch.previous.log`). Set `NOSTALGIA_NO_SANDBOX=1` to turn the sandbox off
+outside Steam as well.
+
 ### Features
 
 * **Vault**: every game on the server, with filters for platform, genre, theme, game mode, era

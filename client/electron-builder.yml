@@ -10,6 +10,8 @@ files:
   - package.json
 icon: build/icon.png
 asar: true
+# Linux: launcher script in front of the Electron binary (Steam / gamescope workarounds, log file).
+afterPack: scripts/after-pack.cjs
 win:
   icon: build/icon.ico
   target:
