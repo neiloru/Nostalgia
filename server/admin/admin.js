@@ -139,7 +139,7 @@
             <div class="kv small-text">
               <div>Settings file</div><div class="mono">${esc(o.settingsFile)}</div>
               <div>Library</div><div class="mono">${esc(o.libraryPath)}</div>
-              <div>Database</div><div class="mono">${esc(o.dataPath)}</div>
+              <div>Database</div><div class="mono">${esc(o.databasePath)}</div>
               <div>Cloud saves</div><div><span class="mono">${esc(o.savesPath)}</span>
                 ${!o.savesStorage.writable ? `<span class="pill err">not writable</span>` : ''}
                 ${o.savesStorage.missing ? `<span class="pill err">${o.savesStorage.missing} save files missing</span>` : ''}</div>

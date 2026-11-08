@@ -44,7 +44,7 @@ before(async () => {
   );
   fs.writeFileSync(path.join(lib, 'emulators', 'psx', 'Emu', 'emu.exe'), 'binary');
   const settings = path.join(dir, 'settings.yaml');
-  fs.writeFileSync(settings, `adminUsername: admin\nadminPassword: secret\nlibraryDirectory: ./library\ndataDirectory: ./data\nigdbClientId: ""\nigdbClientSecret: ""\n`);
+  fs.writeFileSync(settings, `adminUsername: admin\nadminPassword: secret\nlibraryDirectory: ./library\ndatabaseDirectory: ./database\nsavesDirectory: ./saves\nigdbClientId: ""\nigdbClientSecret: ""\n`);
   const s = await createServer(settings);
   await s.jobs.scan();
   server = s.app.listen(0);
@@ -108,7 +108,7 @@ test('cloud saves are versioned, deduplicated and never overwritten', async () =
   assert.deepEqual(list.map((v: { version: number }) => v.version), [2, 1]);
   const old = await fetch(`${base}/api/saves/version/${list[1].id}/download`, { headers: { Authorization: `Bearer ${token}` } });
   assert.equal(await old.text(), 'one');
-  const files = fs.readdirSync(path.join(dir, 'data', 'saves'), { recursive: true }).filter((f) => String(f).endsWith('.zip'));
+  const files = fs.readdirSync(path.join(dir, 'saves'), { recursive: true }).filter((f) => String(f).endsWith('.zip'));
   assert.equal(files.length, 2);
 });
 

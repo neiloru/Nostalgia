@@ -73,9 +73,9 @@ jobs:
       - name: Smoke test
         run: |
           set -e
-          mkdir -p /tmp/nostalgia/config /tmp/nostalgia/library /tmp/nostalgia/data
+          mkdir -p /tmp/nostalgia/config /tmp/nostalgia/library /tmp/nostalgia/database /tmp/nostalgia/saves
           docker run -d --name nostalgia -p 8080:8080 \
-            -v /tmp/nostalgia/config:/config -v /tmp/nostalgia/library:/library -v /tmp/nostalgia/data:/data \
+            -v /tmp/nostalgia/config:/config -v /tmp/nostalgia/library:/library -v /tmp/nostalgia/database:/database -v /tmp/nostalgia/saves:/saves \
             nostalgia-server:test
           ok=
           for i in $(seq 1 30); do
@@ -88,6 +88,8 @@ jobs:
           curl -fs -o /dev/null http://127.0.0.1:8080/admin/
           test -f /tmp/nostalgia/config/settings.yaml   # template written on first start
           test -d /tmp/nostalgia/library/games/psx      # RomM platform folders created
+          test -f /tmp/nostalgia/database/nostalgia.db  # database in its own volume
+          test -z "$(ls /tmp/nostalgia/database | grep -x saves)"  # saves not inside the database volume
           for i in $(seq 1 60); do
             status=$(docker inspect -f '{{.State.Health.Status}}' nostalgia)
             [ "$status" = healthy ] && break

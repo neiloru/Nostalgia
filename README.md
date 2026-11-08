@@ -24,8 +24,8 @@ feels like a modern game store. It can be used with mouse, keyboard or a game co
 ┌──────────────────────────── server (Node.js) ─────────────────────────────┐
 │ library/games/{platform}/{Name} [igdbid-ID]/…   IGDB metadata + artwork    │
 │ library/emulators/{platform}/{Emulator}/emu.yaml Hasheous hash check       │
-│ data/nostalgia.db  (users, libraries, play time) Admin web UI  /admin      │
-│ data/saves/{user}/{emulator}/vNNNNN-….zip  (versioned, never deleted)      │
+│ database/nostalgia.db (users, libraries, play time) Admin web UI /admin    │
+│ saves/{user}/{emulator}/vNNNNN-….zip  (versioned, never deleted)           │
 └──────────────┬────────────────────────────────────────────────────────────┘
                │ REST + Server-Sent-Events (push of new cloud saves)
 ┌──────────────┴──────────── client (Electron) ─────────────────────────────┐
@@ -81,17 +81,14 @@ docker compose restart
 | --- | --- |
 | `/config` | `settings.yaml` |
 | `/library` | `games/{platform}/…` and `emulators/{platform}/…` |
-| `/data` | database and versioned cloud saves. **Back this up.** |
-| `/saves` (optional) | cloud saves on their own volume, e.g. an SMB share (set `NOSTALGIA_SAVES=/saves`) |
+| `/database` | SQLite database. Keep it on a local disk. **Back this up.** |
+| `/saves` | versioned cloud saves. **Back this up.** |
 
-Library and data paths are fixed by the image (`NOSTALGIA_LIBRARY`, `NOSTALGIA_DATA`), so leave
-`libraryDirectory` / `dataDirectory` in settings.yaml as they are. Update with
+The paths of library, database and saves are fixed by the image (`NOSTALGIA_LIBRARY`,
+`NOSTALGIA_DATABASE`, `NOSTALGIA_SAVES`); settings.yaml cannot move them inside the container.
+To keep the saves somewhere else, mount that folder at `/saves`. Update with
 `docker compose pull && docker compose up -d`. To build the image yourself from a clone, run
 `docker build -f server/Dockerfile -t nostalgia-server .` in the repository root.
-
-**Cloud saves on an SMB share.** The compose example contains a commented `cifs` volume: Docker
-mounts the share itself and refuses to start the container when it is unreachable. Keep `/data`
-(the SQLite database) on a local disk: SQLite on network shares risks corruption.
 
 ### Settings (`settings.yaml`)
 
@@ -101,14 +98,14 @@ mounts the share itself and refuses to start the container when it is unreachabl
 | `libraryDirectory` | root of the game library (relative paths are relative to the settings file) |
 | `igdbClientId` / `igdbClientSecret` | Twitch/IGDB API credentials ([how to get them](https://api-docs.igdb.com/#account-creation)) |
 | `port`, `host` | listen address (default `0.0.0.0:8080`) |
-| `dataDirectory` | database and cloud saves (default `./data`). Keep it on a local disk. **Back this folder up.** |
-| `savesDirectory` | cloud saves only (default empty = `<dataDirectory>/saves`), e.g. a network share like `//nas/games/nostalgia-saves`. **Back it up too.** |
+| `databaseDirectory` | SQLite database (default `./database`). Keep it on a local disk. **Back it up.** |
+| `savesDirectory` | versioned cloud saves (default `./saves`), any folder or mounted drive. **Back it up.** |
 | `allowRegistration` | allow users to register from the client (default `true`) |
 | `scanIntervalMinutes` | automatic rescans (default 30, `0` = off) |
 | `hasheousOnScheduledScan` | also hash files during automatic scans (default `false`) |
 
 Environment overrides: `NOSTALGIA_SETTINGS`, `NOSTALGIA_PORT`, `NOSTALGIA_LIBRARY`,
-`NOSTALGIA_DATA`, `NOSTALGIA_SAVES`, `IGDB_CLIENT_ID`, `IGDB_CLIENT_SECRET`.
+`NOSTALGIA_DATABASE`, `NOSTALGIA_SAVES`, `IGDB_CLIENT_ID`, `IGDB_CLIENT_SECRET`.
 
 ### Library layout
 
@@ -171,7 +168,7 @@ Placeholders: `{rom}` (selected file/disc), `{romDir}`, `{gameDir}`, `{emulatorD
 `{documents}`, `{appData}`, `{config}` (`$XDG_CONFIG_HOME`), `{dataHome}` (`$XDG_DATA_HOME`),
 plus environment variables (`%USERPROFILE%`, `$HOME`, `${VAR}`) and `~`.
 The old `saveFolder:` key (single folder) is accepted too. emu.yaml can be edited in the
-admin UI (the previous version is kept in `data/emu-yaml-history`).
+admin UI (the previous version is kept in `database/emu-yaml-history`).
 
 ![Admin UI: emulators with their emu.yaml status](docs/screenshots/admin-emulators.png)
 
@@ -179,13 +176,13 @@ admin UI (the previous version is kept in `data/emu-yaml-history`).
 
 * Saves are stored **per user and per emulator**, because the save location belongs to the
   emulator (e.g. PCSX2 memory cards hold all PS2 games).
-* Every upload is a new version (`data/saves/{user}/{emulator}/v00001-….zip`). Identical
-  uploads are deduplicated. **Nothing is ever deleted.**
-* `savesDirectory` moves the saves away from the database, e.g. to a NAS. To move existing
-  saves, stop the server, move the contents of `data/saves/` there, set `savesDirectory` and
-  start again. On start (and in the admin dashboard) the server checks that the folder is
-  writable and that the newest saves are there, and reports an error otherwise (share not
-  mounted?). On Windows, the account running the server needs access to the share.
+* Every upload is a new version (`saves/{user}/{emulator}/v00001-….zip`) in `savesDirectory`,
+  separate from the database. Identical uploads are deduplicated. **Nothing is ever deleted.**
+* On start (and in the admin dashboard) the server checks that the saves folder is writable and
+  that the newest saves are there, and reports an error otherwise.
+* Servers from before the split kept saves in `data/saves`. On the first start they are copied
+  to `savesDirectory` and the old folder is renamed to `saves-moved-<date>` (not deleted); an old
+  `dataDirectory` setting is read as `databaseDirectory`.
 * Connected clients are notified through Server-Sent Events and pull new versions right away.
 
 ---

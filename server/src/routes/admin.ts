@@ -67,7 +67,7 @@ export function adminRouter(d: AdminDeps): Router {
       igdbConfigured: igdb.configured,
       registration: settings.allowRegistration,
       libraryPath: settings.libraryPath,
-      dataPath: settings.dataPath,
+      databasePath: settings.databasePath,
       savesPath: settings.savesPath,
       savesStorage: saves.check(),
       settingsFile: settings.file,

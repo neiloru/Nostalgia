@@ -24,12 +24,12 @@ WORKDIR /app
 ENV NODE_ENV=production \
     NOSTALGIA_SETTINGS=/config/settings.yaml \
     NOSTALGIA_LIBRARY=/library \
-    NOSTALGIA_DATA=/data
+    NOSTALGIA_DATABASE=/database \n    NOSTALGIA_SAVES=/saves
 # server.js is fully bundled: no node_modules needed.
 COPY --from=build /src/server/dist/ ./
 COPY server/settings.example.yaml LICENSE ./
-# /config/settings.yaml, the game library and the data folder (database + cloud saves) are volumes.
-VOLUME ["/config", "/library", "/data"]
+# settings.yaml, the game library, the database and the cloud saves are separate volumes.
+VOLUME ["/config", "/library", "/database", "/saves"]
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:' + (process.env.NOSTALGIA_PORT || 8080) + '/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]

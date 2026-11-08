@@ -8,7 +8,8 @@ igdbClientSecret: ""
 # --- optional ---
 port: 8080
 host: 0.0.0.0
-dataDirectory: ./data
+databaseDirectory: ./database
+savesDirectory: ./saves
 allowRegistration: true
 scanIntervalMinutes: 30
 hasheousOnScheduledScan: false

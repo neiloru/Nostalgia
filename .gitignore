@@ -10,3 +10,8 @@ igdb.txt
 settings.yaml
 server/settings.yaml
 *.log
+# local server data (database, cloud saves, library)
+server/data/
+server/database/
+server/saves/
+server/library/

@@ -117,9 +117,9 @@ CREATE INDEX IF NOT EXISTS idx_saves_user_emu ON saves(user_id, emulator_id, ver
 CREATE INDEX IF NOT EXISTS idx_play_user ON play_sessions(user_id, game_id);
 `;
 
-export function openDb(dataPath: string): DB {
-  fs.mkdirSync(dataPath, { recursive: true });
-  const db = new DatabaseSync(path.join(dataPath, 'nostalgia.db'));
+export function openDb(databasePath: string): DB {
+  fs.mkdirSync(databasePath, { recursive: true });
+  const db = new DatabaseSync(path.join(databasePath, 'nostalgia.db'));
   db.exec(SCHEMA);
   return db;
 }

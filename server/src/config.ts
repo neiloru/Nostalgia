@@ -12,8 +12,9 @@ export interface Settings {
   /** Additional settings (optional). */
   port: number;
   host: string;
-  dataDirectory: string;
-  /** Cloud saves; empty = "<dataDirectory>/saves". May point to a network share. */
+  /** SQLite database and other server data. */
+  databaseDirectory: string;
+  /** Versioned cloud saves. Separate from the database. */
   savesDirectory: string;
   allowRegistration: boolean;
   scanIntervalMinutes: number;
@@ -31,8 +32,8 @@ const DEFAULTS: Settings = {
   igdbClientSecret: '',
   port: 8080,
   host: '0.0.0.0',
-  dataDirectory: './data',
-  savesDirectory: '',
+  databaseDirectory: './database',
+  savesDirectory: './saves',
   allowRegistration: true,
   scanIntervalMinutes: 30,
   hasheousOnScheduledScan: false,
@@ -56,11 +57,10 @@ igdbClientSecret: ""
 # --- optional ---
 port: 8080
 host: 0.0.0.0
-# Database (and, unless savesDirectory is set, cloud saves) live here. Keep it on a local disk.
-dataDirectory: ./data
-# Versioned cloud saves (never deleted). Empty = "<dataDirectory>/saves". Can be a network
-# share: //nas/games/nostalgia-saves (Windows UNC path) or a mounted /mnt/nas/nostalgia-saves.
-savesDirectory: ""
+# SQLite database (users, library, play time). Keep it on a local disk.
+databaseDirectory: ./database
+# Versioned cloud saves, one zip per upload. Never deleted.
+savesDirectory: ./saves
 allowRegistration: true
 scanIntervalMinutes: 30
 hasheousOnScheduledScan: false
@@ -69,8 +69,10 @@ hasheousOnScheduledScan: false
 export interface LoadedSettings extends Settings {
   file: string;
   libraryPath: string;
-  dataPath: string;
+  databasePath: string;
   savesPath: string;
+  /** "<database>/saves" of servers from before the split; moved to savesPath on start. */
+  legacySavesPath: string;
   gamesPath: string;
   emulatorsPath: string;
 }
@@ -88,13 +90,16 @@ export function loadSettings(file = resolveSettingsFile()): LoadedSettings {
     fs.writeFileSync(file, TEMPLATE, 'utf8');
     log.warn(`Created default settings file at ${file} - change the admin password!`);
   }
-  const raw = (YAML.parse(fs.readFileSync(file, 'utf8')) ?? {}) as Partial<Settings>;
+  const raw = (YAML.parse(fs.readFileSync(file, 'utf8')) ?? {}) as Partial<Settings> & { dataDirectory?: string };
+  // Older settings files: "dataDirectory" held the database and the saves.
+  if (raw.databaseDirectory === undefined && raw.dataDirectory !== undefined) raw.databaseDirectory = raw.dataDirectory;
+  delete raw.dataDirectory;
   const s: Settings = { ...DEFAULTS, ...raw };
   // Environment overrides are handy for containers.
   const env = process.env;
   if (env.NOSTALGIA_PORT) s.port = Number(env.NOSTALGIA_PORT);
   if (env.NOSTALGIA_LIBRARY) s.libraryDirectory = env.NOSTALGIA_LIBRARY;
-  if (env.NOSTALGIA_DATA) s.dataDirectory = env.NOSTALGIA_DATA;
+  if (env.NOSTALGIA_DATABASE ?? env.NOSTALGIA_DATA) s.databaseDirectory = (env.NOSTALGIA_DATABASE ?? env.NOSTALGIA_DATA)!;
   if (env.NOSTALGIA_SAVES) s.savesDirectory = env.NOSTALGIA_SAVES;
   if (env.IGDB_CLIENT_ID) s.igdbClientId = env.IGDB_CLIENT_ID;
   if (env.IGDB_CLIENT_SECRET) s.igdbClientSecret = env.IGDB_CLIENT_SECRET;
@@ -107,15 +112,15 @@ export function loadSettings(file = resolveSettingsFile()): LoadedSettings {
 
   const base = path.dirname(file);
   const libraryPath = path.resolve(base, s.libraryDirectory);
-  const dataPath = path.resolve(base, s.dataDirectory);
-  s.savesDirectory = String(s.savesDirectory ?? '').trim();
-  const savesPath = s.savesDirectory ? path.resolve(base, s.savesDirectory) : path.join(dataPath, 'saves');
+  const databasePath = path.resolve(base, String(s.databaseDirectory || DEFAULTS.databaseDirectory));
+  const savesPath = path.resolve(base, String(s.savesDirectory || DEFAULTS.savesDirectory));
   return {
     ...s,
     file,
     libraryPath,
-    dataPath,
+    databasePath,
     savesPath,
+    legacySavesPath: path.join(databasePath, 'saves'),
     gamesPath: path.join(libraryPath, 'games'),
     emulatorsPath: path.join(libraryPath, 'emulators'),
   };

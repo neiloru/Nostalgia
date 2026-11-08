@@ -73,7 +73,8 @@ Start:   ${win ? 'start.cmd' : './start.sh'}
          On first start settings.yaml is created next to this file. Set the admin
          password, libraryDirectory and the IGDB credentials there, then start again.
 Admin:   http://<this machine>:8080/admin
-Data:    ./data (database and cloud saves) unless dataDirectory says otherwise. Back it up.
+Data:    ./database (SQLite database) and ./saves (cloud saves), see databaseDirectory and
+         savesDirectory in settings.yaml. Back both up.
 
 ${withRuntime ? `Node.js ${process.version} is included (${nodeName}).` : 'Requires Node.js 22.5 or newer on the PATH.'}
 Documentation: https://github.com/neiloru/Nostalgia

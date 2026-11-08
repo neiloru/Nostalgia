@@ -16,19 +16,24 @@ import { log } from './log.js';
 
 export async function createServer(settingsFile?: string) {
   const settings = loadSettings(settingsFile);
-  const db = openDb(settings.dataPath);
+  const db = openDb(settings.databasePath);
   const auth = new Auth(db, settings);
   const library = new Library(db, settings);
   const igdb = new Igdb(settings);
   const events = new EventHub();
   const jobs = new Jobs(db, library, igdb, events);
   const saves = new Saves(db, settings.savesPath);
+  const migrated = saves.migrateFrom(settings.legacySavesPath);
+  if (migrated?.moved) log.info(`Moved ${migrated.moved} cloud save files from ${settings.legacySavesPath} to ${saves.root}`);
+  if (migrated?.conflicts.length) {
+    log.error(`${migrated.conflicts.length} save files exist in both ${settings.legacySavesPath} and ${saves.root} with different sizes; old folder kept. First: ${migrated.conflicts[0]}`);
+  }
   const saveCheck = saves.check();
   if (!saveCheck.writable) log.error(`Cloud save folder ${saves.root} is not writable: ${saveCheck.error}`);
   if (saveCheck.missing) {
     log.error(
       `${saveCheck.missing} of ${saveCheck.checked} newest cloud saves are missing in ${saves.root}. ` +
-        'Is the network share mounted? If you changed savesDirectory, move the old saves folder there.',
+        'Is the drive mounted? If you changed savesDirectory, move the old saves folder there.',
     );
   }
 

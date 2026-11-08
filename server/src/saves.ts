@@ -49,8 +49,39 @@ export class Saves {
   }
 
   /**
-   * Startup check, mainly for network shares: is the folder writable, and are the newest
-   * save files there? Missing files usually mean an unmounted share or a moved folder.
+   * One-time move from the old layout (saves inside the database folder). Files are copied
+   * (works across disks), checked by size, and the old folder is then renamed to
+   * "saves-moved-<date>" instead of being deleted. Existing files are never overwritten.
+   */
+  migrateFrom(oldDir: string): { moved: number; conflicts: string[] } | null {
+    if (path.resolve(oldDir) === path.resolve(this.root) || !fs.existsSync(oldDir)) return null;
+    const files = (fs.readdirSync(oldDir, { recursive: true }) as string[]).filter((f) => fs.statSync(path.join(oldDir, f)).isFile());
+    if (!files.length) return null;
+    let moved = 0;
+    const conflicts: string[] = [];
+    for (const rel of files) {
+      const from = path.join(oldDir, rel);
+      const to = path.join(this.root, rel);
+      const size = fs.statSync(from).size;
+      if (fs.existsSync(to)) {
+        if (fs.statSync(to).size !== size) conflicts.push(rel);
+        continue;
+      }
+      fs.mkdirSync(path.dirname(to), { recursive: true });
+      fs.copyFileSync(from, to, fs.constants.COPYFILE_EXCL);
+      if (fs.statSync(to).size !== size) throw new Error(`Copying ${from} to ${to} failed (size differs)`);
+      moved++;
+    }
+    if (!conflicts.length) {
+      const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '');
+      fs.renameSync(oldDir, `${oldDir}-moved-${stamp}`);
+    }
+    return { moved, conflicts };
+  }
+
+  /**
+   * Startup check: is the folder writable, and are the newest save files there?
+   * Missing files usually mean an unmounted drive/share or a moved folder.
    */
   check(): { writable: boolean; error?: string; checked: number; missing: number } {
     let writable = true;

@@ -473,7 +473,7 @@ export class Library {
     const file = path.join(dir, 'emu.yaml');
     if (fs.existsSync(file)) {
       // Keep the previous version outside of the emulator folder so it is not sent to clients.
-      const backupDir = path.join(this.settings.dataPath, 'emu-yaml-history', row.platform, row.folder);
+      const backupDir = path.join(this.settings.databasePath, 'emu-yaml-history', row.platform, row.folder);
       fs.mkdirSync(backupDir, { recursive: true });
       fs.copyFileSync(file, path.join(backupDir, `emu.yaml.${Date.now()}`));
     }

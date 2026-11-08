@@ -14,6 +14,8 @@ examples
 client/*
 !client/package.json
 server/data
+server/database
+server/saves
 server/library
 server/test
 **/settings.yaml
