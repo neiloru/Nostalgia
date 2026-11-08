@@ -32,6 +32,40 @@ function send(channel: string, payload: unknown) {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
 }
 
+/**
+ * The UI is laid out for 1920x1080. Bigger windows (4K TV, 1440p monitor without OS scaling,
+ * e.g. in SteamOS Game Mode) are zoomed so that everything keeps its size relative to the screen.
+ * Window sizes are in device-independent pixels, so OS display scaling is already included.
+ */
+const AUTO_BASE = { width: 1920, height: 1080 };
+function autoZoom(width: number, height: number) {
+  const z = Math.min(width / AUTO_BASE.width, height / AUTO_BASE.height);
+  return Math.round(Math.min(3, Math.max(1, z)) * 20) / 20; // 1.0 … 3.0 in 5 % steps
+}
+
+function applyZoom() {
+  if (!win || win.isDestroyed()) return;
+  const [width, height] = win.getContentSize();
+  const zoom = core.settings.uiScale > 0 ? core.settings.uiScale : autoZoom(width, height);
+  if (Math.abs(win.webContents.getZoomFactor() - zoom) > 0.001) win.webContents.setZoomFactor(zoom);
+  if (core.uiZoom !== zoom) {
+    core.uiZoom = zoom;
+    core.emitState();
+  }
+}
+
+const UI_SCALE_STEPS = [0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+/** Ctrl + / Ctrl - (dir 1 / -1) from the renderer; dir 0 = back to automatic. */
+function stepUiScale(dir: number) {
+  const cur = core.settings.uiScale || core.uiZoom;
+  const next =
+    dir === 0 ? 0 : dir > 0 ? UI_SCALE_STEPS.find((s) => s > cur + 0.001) : [...UI_SCALE_STEPS].reverse().find((s) => s < cur - 0.001);
+  if (next === undefined) return;
+  core.settingsStore.set({ uiScale: next });
+  applyZoom();
+  core.emitState();
+}
+
 function createWindow() {
   const args = process.argv;
   const fullscreen = args.includes('--fullscreen') || (!args.includes('--windowed') && core.settings.startFullscreen);
@@ -65,6 +99,12 @@ function createWindow() {
     core.emitState();
   });
   win.once('ready-to-show', () => win?.show());
+  let zoomTimer: NodeJS.Timeout | undefined;
+  win.on('resize', () => {
+    clearTimeout(zoomTimer);
+    zoomTimer = setTimeout(applyZoom, 100);
+  });
+  win.webContents.on('did-finish-load', applyZoom);
   win.webContents.on('before-input-event', (e, input) => {
     if (input.type === 'keyDown' && input.key === 'F11') {
       win?.setFullScreen(!win.isFullScreen());
@@ -193,6 +233,7 @@ function handlers(): Record<string, Handler> {
     },
     setSettings: (s: Partial<ClientSettings>) => {
       core.settingsStore.set(s);
+      if (s.uiScale !== undefined) applyZoom();
       core.emitState();
     },
     addLocation: async () => {
@@ -228,6 +269,7 @@ function handlers(): Record<string, Handler> {
       return out;
     },
     toggleFullscreen: () => win?.setFullScreen(!win.isFullScreen()),
+    stepUiScale: (dir: number) => stepUiScale(dir),
     minimize: () => win?.minimize(),
     quit: () => app.quit(),
     openExternal: (url: string) => {

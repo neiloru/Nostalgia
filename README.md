@@ -252,6 +252,11 @@ outside Steam as well.
 F11 toggles fullscreen at any time. Example for Steam: set the launch options of the
 non-Steam shortcut to `--fullscreen`.
 
+**UI scale.** The interface is laid out for 1920×1080 and scales up automatically on bigger
+windows (1440p = 135 %, 4K = 200 %; OS display scaling is taken into account). Settings →
+Display → *UI scale* sets a fixed scale from 75 % to 300 %; Ctrl + / Ctrl − change it and
+Ctrl 0 returns to automatic.
+
 ### Controls
 
 | action | controller | keyboard |

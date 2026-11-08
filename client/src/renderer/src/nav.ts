@@ -165,6 +165,15 @@ export function installNavigation() {
   window.addEventListener('mousedown', () => setMode('mouse'), { passive: true });
 
   window.addEventListener('keydown', (e) => {
+    // Ctrl + / Ctrl - / Ctrl 0: UI scale (0 = automatic again).
+    if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+      const dir = e.key === '+' || e.key === '=' ? 1 : e.key === '-' ? -1 : e.key === '0' ? 0 : null;
+      if (dir !== null) {
+        e.preventDefault();
+        void window.nostalgia.call('stepUiScale', dir);
+        return;
+      }
+    }
     const text = isTextInput(document.activeElement);
     const dirs: Record<string, Dir> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
     if (dirs[e.key]) {

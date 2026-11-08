@@ -61,6 +61,7 @@ export class Core extends EventEmitter {
   serverReachable = false;
   running: RunningGame | null = null;
   fullscreen = false;
+  uiZoom = 1;
   lastError?: string;
   busySaves = new Set<number>();
   private healthTimer: NodeJS.Timeout | null = null;
@@ -82,6 +83,7 @@ export class Core extends EventEmitter {
     this.settingsStore = new JsonStore<ClientSettings>(path.join(ud, 'settings.json'), {
       locations: [path.join(opts.home, 'Games', 'Nostalgia')],
       startFullscreen: process.env.SteamDeck === '1' || process.env.XDG_CURRENT_DESKTOP === 'gamescope',
+      uiScale: 0,
       autoSyncSaves: true,
       minimizeOnLaunch: OS === 'windows',
       installEmulatorWithGame: true,
@@ -531,6 +533,7 @@ export class Core extends EventEmitter {
       saveSync,
       pendingSessions: this.pendingStore.data.sessions.filter((x) => x.userId === this.userId).length,
       fullscreen: this.fullscreen,
+      uiZoom: this.uiZoom,
       os: this.os,
       device: this.device,
       version: this.opts.version,

@@ -31,6 +31,8 @@ export interface ClientSettings {
   locations: string[];
   defaultLocation?: string;
   startFullscreen: boolean;
+  /** UI scale factor, e.g. 1.5; 0 = automatic (by window size, 1920x1080 = 100%). */
+  uiScale: number;
   autoSyncSaves: boolean;
   minimizeOnLaunch: boolean;
   installEmulatorWithGame: boolean;
@@ -92,6 +94,8 @@ export interface ClientState {
   saveSync: Record<number, SaveSyncState & { busy?: boolean; latest?: SaveVersion }>;
   pendingSessions: number;
   fullscreen: boolean;
+  /** Zoom factor currently applied to the UI. */
+  uiZoom: number;
   os: 'windows' | 'linux';
   device: string;
   version: string;

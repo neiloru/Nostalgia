@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { act, call } from '../bridge';
-import { Confirm, Icon, Toggle, fmtBytes } from '../ui';
+import { Confirm, Icon, Select, Toggle, fmtBytes } from '../ui';
 import type { ClientSettings, ClientState } from '../../../main/types';
 
 export function Settings({ state }: { state: ClientState }) {
@@ -131,6 +131,16 @@ export function Settings({ state }: { state: ClientState }) {
             <Toggle label="Fullscreen" hint="F11" checked={state.fullscreen} onChange={() => call('toggleFullscreen')} />
             <Toggle label="Start in fullscreen" hint="Recommended for Steam Deck / TV" checked={s.startFullscreen} onChange={(v) => set({ startFullscreen: v })} />
           </div>
+          <Select
+            label="UI scale"
+            value={s.uiScale ?? 0}
+            options={[
+              { value: 0, label: s.uiScale ? 'Automatic' : `Automatic (${Math.round(state.uiZoom * 100)} %)`, hint: 'By window size, 1080p = 100 %' },
+              ...[0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3].map((z) => ({ value: z, label: `${Math.round(z * 100)} %` })),
+            ]}
+            onChange={(v) => set({ uiScale: v })}
+          />
+          <div className="muted small">Ctrl + / Ctrl − / Ctrl 0 change the scale with a keyboard.</div>
           <h3>Controls</h3>
           <div className="kv small">
             <span>Navigate</span>
