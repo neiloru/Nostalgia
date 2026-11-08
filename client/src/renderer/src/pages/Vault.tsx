@@ -159,7 +159,7 @@ export function Vault({
 
   return (
     <div className="vault">
-      <aside className="filters">
+      <aside className="filters" data-nav-group data-nav-remember>
         <div className="search">
           <Icon name="search" size={16} />
           <input ref={searchRef} type="search" placeholder="Search the vault…" value={f.q} onChange={(e) => set({ q: e.target.value })} />
@@ -197,7 +197,7 @@ export function Vault({
           </button>
         )}
       </aside>
-      <section className="vault-main">
+      <section className="vault-main" data-nav-group data-nav-remember>
         {!state.online && <OfflineBanner />}
         <div className="section-head">
           <h1>Vault</h1>

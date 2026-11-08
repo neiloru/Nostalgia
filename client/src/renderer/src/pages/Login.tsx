@@ -36,16 +36,8 @@ export function Login({ state }: { state: ClientState }) {
 
   return (
     <div className="login-screen">
-      <div className="login-art" aria-hidden>
-        {Array.from({ length: 24 }).map((_, i) => (
-          <span key={i} style={{ animationDelay: `${(i % 8) * -1.7}s`, left: `${(i * 37) % 100}%`, top: `${(i * 53) % 100}%` }} />
-        ))}
-      </div>
       <form className="login-card" onSubmit={submit}>
-        <div className="brand big">
-          <span className="logo">N</span>
-          <span>Nostalgia</span>
-        </div>
+        <h1>Nostalgia</h1>
         <p className="muted">{register ? 'Create your account' : 'Sign in to your game server'}</p>
         <label>
           Server

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { act, call, onToast, useClientState, useDownloads, type Toast } from './bridge';
-import { focusFirst, inputMode, onInputMode } from './nav';
+import { focusFirst, focusGroup, inputMode, onInputMode } from './nav';
 import { Icon, fmtClock } from './ui';
 import { Login } from './pages/Login';
 import { Vault } from './pages/Vault';
@@ -10,11 +10,11 @@ import { Settings } from './pages/Settings';
 import type { ItemKind } from '../../main/types';
 
 export type Tab = 'vault' | 'library' | 'downloads' | 'settings';
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'vault', label: 'Vault' },
-  { id: 'library', label: 'Library' },
-  { id: 'downloads', label: 'Downloads' },
-  { id: 'settings', label: 'Settings' },
+const TABS: { id: Tab; label: string; icon: 'grid' | 'library' | 'download' | 'gear' }[] = [
+  { id: 'vault', label: 'Vault', icon: 'grid' },
+  { id: 'library', label: 'Library', icon: 'library' },
+  { id: 'downloads', label: 'Downloads', icon: 'download' },
+  { id: 'settings', label: 'Settings', icon: 'gear' },
 ];
 
 export interface Navigate {
@@ -34,6 +34,7 @@ export function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [mode, setMode] = useState(inputMode);
   const contentRef = useRef<HTMLDivElement>(null);
+  const railRef = useRef<HTMLElement>(null);
 
   useEffect(() => onInputMode(setMode), []);
   useEffect(
@@ -56,6 +57,9 @@ export function App() {
         setTab(next);
       } else if (a === 'menu') {
         setTab('settings');
+      } else if (a === 'back') {
+        // B with nothing to close: go to the sidebar.
+        if (!railRef.current?.contains(document.activeElement)) focusGroup(railRef.current);
       }
     };
     window.addEventListener('nav', onNav);
@@ -88,59 +92,74 @@ export function App() {
     ? activeDownloads.reduce((a, j) => a + j.receivedBytes, 0) / Math.max(1, activeDownloads.reduce((a, j) => a + j.totalBytes, 0))
     : 0;
 
-  if (!state) return <div className="splash"><div className="logo big">N</div></div>;
+  const selectTab = (t: Tab) => {
+    if (t === tab) focusFirst(contentRef.current);
+    else setTab(t);
+  };
+
+  if (!state) return <div className="splash" />;
   if (!state.session) return <Login state={state} />;
 
   return (
     <div className={`shell input-${mode}`}>
-      <header className="topbar">
-        <div className="brand">
-          <span className="logo">N</span>
-          <span>Nostalgia</span>
-        </div>
-        <nav className="tabs" role="tablist">
-          <span className="pad-hint">LB</span>
+      <nav className="rail" ref={railRef} data-nav-group role="tablist" aria-orientation="vertical">
+        <div className="rail-tabs">
           {TABS.map((t) => (
-            <button key={t.id} role="tab" aria-selected={tab === t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
-              {t.label}
-              {t.id === 'downloads' && activeDownloads.length > 0 && <span className="tab-badge">{Math.round(dlProgress * 100)}%</span>}
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={tab === t.id}
+              className={`rail-item ${tab === t.id ? 'active' : ''}`}
+              data-nav-default={tab === t.id ? true : undefined}
+              onClick={() => selectTab(t.id)}
+            >
+              <Icon name={t.icon} size={20} />
+              <span className="rail-label">{t.label}</span>
+              {t.id === 'downloads' && activeDownloads.length > 0 && <span className="rail-badge">{Math.round(dlProgress * 100)}%</span>}
             </button>
           ))}
-          <span className="pad-hint">RB</span>
-        </nav>
-        <div className="topbar-right">
+        </div>
+        <div className="rail-foot">
           {!state.online && (
-            <button className="offline-pill" onClick={() => act(() => call('refresh'))} title="Try to reconnect">
-              <Icon name="wifiOff" size={15} /> Offline
+            <button className="rail-item offline" onClick={() => act(() => call('refresh'))} title="Try to reconnect">
+              <Icon name="wifiOff" size={20} />
+              <span className="rail-label">Offline</span>
             </button>
           )}
-          <span className="user-chip" title={state.session.serverUrl}>
-            {state.session.user.username}
-          </span>
-          <button className="icon-btn" title="Toggle fullscreen (F11)" onClick={() => call('toggleFullscreen')}>
-            <Icon name="expand" />
+          <button className="rail-item" title="Toggle fullscreen (F11)" onClick={() => call('toggleFullscreen')}>
+            <Icon name="expand" size={20} />
+            <span className="rail-label">{state.fullscreen ? 'Window' : 'Fullscreen'}</span>
           </button>
+          <div className="rail-user" title={state.session.serverUrl}>
+            <Icon name="user" size={20} />
+            <span className="rail-label">
+              <span className="ellipsis">{state.session.user.username}</span>
+              <small className="ellipsis">{state.session.serverUrl.replace(/^https?:\/\//, '')}</small>
+            </span>
+          </div>
         </div>
-      </header>
+      </nav>
 
-      {state.running && <RunningBanner name={state.running.name} startedAt={state.running.startedAt} />}
+      <div className="main-col">
+        {state.running && <RunningBanner name={state.running.name} startedAt={state.running.startedAt} />}
 
-      <main className="content" ref={contentRef}>
-        {tab === 'vault' && <Vault state={state} jobs={jobs} nav={nav} selected={storeSel} setSelected={setStoreSel} />}
-        {tab === 'library' && <Library state={state} jobs={jobs} nav={nav} selected={libSel} setSelected={setLibSel} />}
-        {tab === 'downloads' && <Downloads state={state} jobs={jobs} />}
-        {tab === 'settings' && <Settings state={state} />}
-      </main>
+        <main className="content" ref={contentRef} data-nav-group data-nav-remember>
+          {tab === 'vault' && <Vault state={state} jobs={jobs} nav={nav} selected={storeSel} setSelected={setStoreSel} />}
+          {tab === 'library' && <Library state={state} jobs={jobs} nav={nav} selected={libSel} setSelected={setLibSel} />}
+          {tab === 'downloads' && <Downloads state={state} jobs={jobs} />}
+          {tab === 'settings' && <Settings state={state} />}
+        </main>
 
-      <footer className={`hintbar ${mode === 'mouse' ? 'dim' : ''}`}>
-        <span><kbd className="btn-a">A</kbd> Select</span>
-        <span><kbd className="btn-b">B</kbd> Back</span>
-        <span><kbd className="btn-y">Y</kbd> Search / filter</span>
-        <span><kbd>LB</kbd><kbd>RB</kbd> Switch tabs</span>
-        <span className="spacer" />
-        {state.pendingSessions > 0 && <span className="muted">{state.pendingSessions} play session(s) waiting to sync</span>}
-        <span className="muted">{state.online ? 'Connected' : 'Offline mode'}</span>
-      </footer>
+        <footer className={`hintbar ${mode === 'mouse' ? 'dim' : ''}`}>
+          <span><kbd>A</kbd> Select</span>
+          <span><kbd>B</kbd> Back</span>
+          {((tab === 'vault' && !storeSel) || tab === 'library') && <span><kbd>Y</kbd> Search</span>}
+          <span><kbd>LB</kbd><kbd>RB</kbd> Switch section</span>
+          <span className="spacer" />
+          {state.pendingSessions > 0 && <span>{state.pendingSessions} play session{state.pendingSessions > 1 ? 's' : ''} waiting to sync</span>}
+          <span>{state.online ? 'Connected' : 'Offline'}</span>
+        </footer>
+      </div>
 
       <div className="toasts">
         {toasts.map((t) => (
@@ -161,7 +180,7 @@ function RunningBanner({ name, startedAt }: { name: string; startedAt: string })
   }, []);
   return (
     <div className="running-banner">
-      <span className="pulse" />
+      <span className="live-dot" />
       <span>
         Playing <strong>{name}</strong>
       </span>

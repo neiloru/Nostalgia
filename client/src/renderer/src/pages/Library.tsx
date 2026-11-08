@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { platformInfo, type SaveVersion } from '@nostalgia/shared';
 import { act, call } from '../bridge';
 import { ActionButtons, Cover, OfflineBanner, itemStatus, type AnyItem } from '../common';
@@ -21,6 +21,14 @@ export function Library({
   setSelected: (s: { kind: ItemKind; id: number } | null) => void;
 }) {
   const [q, setQ] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const onNav = (e: Event) => {
+      if ((e as CustomEvent).detail === 'secondary' && !document.querySelector('[data-nav-scope]')) searchRef.current?.focus();
+    };
+    window.addEventListener('nav', onNav);
+    return () => window.removeEventListener('nav', onNav);
+  }, []);
   const [showEmulators, setShowEmulators] = useState(() => localStorage.getItem('libEmus') === '1');
   const [installedOnly, setInstalledOnly] = useState(() => localStorage.getItem('libInstalled') === '1');
   useEffect(() => {
@@ -77,10 +85,10 @@ export function Library({
 
   return (
     <div className="library">
-      <aside className="lib-list">
+      <aside className="lib-list" data-nav-group data-nav-remember>
         <div className="search">
           <Icon name="search" size={16} />
-          <input type="search" placeholder="Search library…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input ref={searchRef} type="search" placeholder="Search library…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <div className="lib-toggles">
           <Toggle label="Show emulators" checked={showEmulators} onChange={setShowEmulators} />
@@ -121,7 +129,7 @@ export function Library({
           )}
         </div>
       </aside>
-      <section className="lib-detail">
+      <section className="lib-detail" data-nav-group>
         {!state.online && <OfflineBanner />}
         {current?.kind === 'game' && <GameDetailPanel key={`g${current.id}`} state={state} jobs={jobs} id={current.id} nav={nav} />}
         {current?.kind === 'emulator' && <EmulatorPanel key={`e${current.id}`} state={state} jobs={jobs} id={current.id} nav={nav} />}
@@ -189,14 +197,14 @@ function GameDetailPanel({ state, jobs, id, nav }: { state: ClientState; jobs: D
       </div>
 
       <div className="detail-grid">
-        <section className="panel">
+        <section className="panel" data-nav-group>
           <h2>
             <Icon name="cloud" /> Cloud saves
           </h2>
           {emu ? <SaveBox state={state} emulatorId={emu.id} /> : <p className="muted">No emulator available for this platform.</p>}
         </section>
 
-        <section className="panel">
+        <section className="panel" data-nav-group>
           <h2>
             <Icon name="gear" /> Game settings <small className="muted">(this device only)</small>
           </h2>
@@ -230,7 +238,7 @@ function GameDetailPanel({ state, jobs, id, nav }: { state: ClientState; jobs: D
           )}
         </section>
 
-        <section className="panel">
+        <section className="panel" data-nav-group>
           <h2>Manage</h2>
           <div className="button-col">
             <button className="btn" onClick={() => nav.toStore('game', id)}>
@@ -428,13 +436,13 @@ function EmulatorPanel({ state, jobs, id, nav }: { state: ClientState; jobs: Dow
         </div>
       </div>
       <div className="detail-grid">
-        <section className="panel">
+        <section className="panel" data-nav-group>
           <h2>
             <Icon name="cloud" /> Cloud saves
           </h2>
           <SaveBox state={state} emulatorId={id} />
         </section>
-        <section className="panel">
+        <section className="panel" data-nav-group>
           <h2>Your games</h2>
           <div className="link-list">
             {games.map((g) => (
@@ -445,7 +453,7 @@ function EmulatorPanel({ state, jobs, id, nav }: { state: ClientState; jobs: Dow
             {!games.length && <span className="muted">No games for this emulator in your library.</span>}
           </div>
         </section>
-        <section className="panel">
+        <section className="panel" data-nav-group>
           <h2>Manage</h2>
           <div className="button-col">
             <button className="btn" onClick={() => nav.toStore('emulator', id)}>

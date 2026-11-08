@@ -130,7 +130,7 @@ function GamePage({
       </div>
 
       <div className="store-body">
-        <div className="store-main">
+        <div className="store-main" data-nav-group>
           {m?.summary && (
             <section>
               <h2>About</h2>
@@ -157,7 +157,7 @@ function GamePage({
           )}
           {!m && <p className="muted">{state.online ? 'No details from IGDB yet.' : 'Details are not cached on this device.'}</p>}
         </div>
-        <aside className="store-side">
+        <aside className="store-side" data-nav-group>
           <dl className="facts">
             <Fact label="Platform" value={g.platformName} />
             <Fact label="Developer" value={m?.developers?.join(', ')} />
@@ -276,7 +276,7 @@ function EmulatorPage({
         </div>
       </div>
       <div className="store-body">
-        <div className="store-main">
+        <div className="store-main" data-nav-group>
           <section>
             <h2>Cloud saves</h2>
             <p className="prose muted">
@@ -302,7 +302,7 @@ function EmulatorPage({
             </div>
           </section>
         </div>
-        <aside className="store-side">
+        <aside className="store-side" data-nav-group>
           <dl className="facts">
             <Fact label="Platform" value={e.platformName} />
             <Fact label="Version" value={e.config?.version} />

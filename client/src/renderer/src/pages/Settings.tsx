@@ -39,7 +39,7 @@ export function Settings({ state }: { state: ClientState }) {
     <div className="settings page">
       <h1>Settings</h1>
       <div className="settings-grid">
-        <section className="panel">
+        <section className="panel" data-nav-group>
           <h2>Account</h2>
           <div className="kv">
             <span>User</span>
@@ -77,7 +77,7 @@ export function Settings({ state }: { state: ClientState }) {
           </div>
         </section>
 
-        <section className="panel">
+        <section className="panel" data-nav-group>
           <h2>Download locations</h2>
           <p className="muted small">Games are installed to &lt;location&gt;/games/&lt;platform&gt;/ and emulators to &lt;location&gt;/emulators/&lt;platform&gt;/.</p>
           <div className="loc-list">
@@ -113,9 +113,9 @@ export function Settings({ state }: { state: ClientState }) {
           </button>
         </section>
 
-        <section className="panel">
+        <section className="panel" data-nav-group>
           <h2>Cloud saves &amp; play</h2>
-          <div className="toggle-list">
+          <div className="toggle-list" data-autofocus>
             <Toggle label="Sync cloud saves automatically" hint="Download newest saves on start, upload after playing" checked={s.autoSyncSaves} onChange={(v) => set({ autoSyncSaves: v })} />
             <Toggle label="Install the emulator together with a game" checked={s.installEmulatorWithGame} onChange={(v) => set({ installEmulatorWithGame: v })} />
             <Toggle label="Minimize Nostalgia while playing" checked={s.minimizeOnLaunch} onChange={(v) => set({ minimizeOnLaunch: v })} />
@@ -125,7 +125,7 @@ export function Settings({ state }: { state: ClientState }) {
           </button>
         </section>
 
-        <section className="panel">
+        <section className="panel" data-nav-group>
           <h2>Display</h2>
           <div className="toggle-list">
             <Toggle label="Fullscreen" hint="F11" checked={state.fullscreen} onChange={() => call('toggleFullscreen')} />
