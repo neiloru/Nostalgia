@@ -289,9 +289,13 @@ npm run package -w server   # self-contained server package for this OS -> serve
 
 ### Builds
 
-Both GitHub Actions workflows run **only manually**: *Actions* → pick the workflow → *Run
-workflow*. You can choose `all`, `windows` or `linux` and skip the tests. Typecheck and tests
-run first; the files are attached to the run as artifacts.
+Every push to `main` runs [Build and pre-release](.github/workflows/prerelease.yml): typecheck
+and tests, client and server for Windows and SteamOS/Linux, then a GitHub **pre-release**
+`v<version>-pre.<run>` with all files and the commits since the previous pre-release (see
+[Releases](https://github.com/neiloru/Nostalgia/releases)). The Docker image is built and pushed on
+every push as well. Each workflow can also be started by hand (*Actions* → workflow → *Run
+workflow*, with `all`, `windows` or `linux` and optionally without tests); the files are then
+attached to the run as artifacts only.
 
 | workflow | Windows | SteamOS / Linux |
 | --- | --- | --- |

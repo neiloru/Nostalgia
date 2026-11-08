@@ -1,7 +1,16 @@
 name: Client build
 
-# Manual only: Actions → "Client build" → Run workflow.
+# Runs on every push to main as part of "Build and pre-release" (prerelease.yml), which calls
+# this workflow and publishes the files. Can also be started by hand: Actions → "Client build".
 on:
+  workflow_call:
+    inputs:
+      platform:
+        type: string
+        default: all
+      skip-tests:
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       platform:
@@ -16,10 +25,6 @@ on:
 
 permissions:
   contents: read
-
-concurrency:
-  group: client-${{ github.ref }}
-  cancel-in-progress: false
 
 jobs:
   test:

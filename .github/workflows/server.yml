@@ -1,8 +1,17 @@
 name: Server build
 
-# Manual only: Actions → "Server build" → Run workflow.
+# Runs on every push to main as part of "Build and pre-release" (prerelease.yml), which calls
+# this workflow and publishes the files. Can also be started by hand: Actions → "Server build".
 # Each package is self-contained: bundled server, admin UI, Node.js runtime and a start script.
 on:
+  workflow_call:
+    inputs:
+      platform:
+        type: string
+        default: all
+      skip-tests:
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       platform:
@@ -17,10 +26,6 @@ on:
 
 permissions:
   contents: read
-
-concurrency:
-  group: server-${{ github.ref }}
-  cancel-in-progress: false
 
 jobs:
   test:

@@ -1,0 +1,97 @@
+name: Build and pre-release
+
+# Every push to main: tests, client and server for Windows and SteamOS/Linux, then a GitHub
+# pre-release "v<version>-pre.<run>" with all files. Can also be started by hand.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One pipeline at a time; a newer push waits instead of cancelling a running release.
+concurrency:
+  group: prerelease
+  cancel-in-progress: false
+
+jobs:
+  client:
+    name: Client
+    uses: ./.github/workflows/client.yml
+    with:
+      platform: all
+
+  server:
+    name: Server
+    uses: ./.github/workflows/server.yml
+    with:
+      platform: all
+
+  release:
+    name: Publish pre-release
+    needs: [client, server]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # tags and history for the change list
+
+      - name: Download all build files
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ls -la dist
+          version=$(node -p "require('./package.json').version")
+          short=${GITHUB_SHA::7}
+          tag="v${version}-pre.${GITHUB_RUN_NUMBER}"
+          prev=$(git tag --list 'v*-pre.*' --sort=-creatordate | head -n1)
+          {
+            echo "Automatic pre-release of \`${short}\` on \`${GITHUB_REF_NAME}\`. **Not tested by a human.**"
+            echo
+            echo "### Changes"
+            if [ -n "$prev" ]; then
+              git log --no-merges --pretty='- %s (%h)' "${prev}..${GITHUB_SHA}"
+            else
+              git log -1 --pretty='- %s (%h)' "$GITHUB_SHA"
+            fi
+            echo
+            echo "### Files"
+            echo "| file | what |"
+            echo "| --- | --- |"
+            for f in dist/*; do
+              n=$(basename "$f")
+              case "$n" in
+                Nostalgia-*-setup.exe) what="Client, Windows installer" ;;
+                Nostalgia-*-portable.exe) what="Client, Windows portable" ;;
+                Nostalgia-*.AppImage) what="Client, SteamOS / Linux (AppImage)" ;;
+                Nostalgia-*.tar.gz) what="Client, Linux (tar.gz)" ;;
+                nostalgia-server-*-windows-*.zip) what="Server, Windows (Node.js included)" ;;
+                nostalgia-server-*-linux-*.tar.gz) what="Server, Linux (Node.js included)" ;;
+                *) what="" ;;
+              esac
+              echo "| \`$n\` | $what |"
+            done
+            echo
+            echo "Docker: \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/nostalgia-server:sha-${short}\` (from the *Docker image* workflow)"
+            if [ -n "$prev" ]; then
+              echo
+              echo "**Full diff**: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${prev}...${tag}"
+            fi
+          } > notes.md
+          cat notes.md
+          gh release create "$tag" dist/* \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "Nostalgia ${version} pre-release ${GITHUB_RUN_NUMBER} (${short})" \
+            --notes-file notes.md
+          echo "### Pre-release [${tag}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${tag})" >> "$GITHUB_STEP_SUMMARY"
