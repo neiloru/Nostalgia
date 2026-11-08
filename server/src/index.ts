@@ -22,7 +22,15 @@ export async function createServer(settingsFile?: string) {
   const igdb = new Igdb(settings);
   const events = new EventHub();
   const jobs = new Jobs(db, library, igdb, events);
-  const saves = new Saves(db, settings.dataPath);
+  const saves = new Saves(db, settings.savesPath);
+  const saveCheck = saves.check();
+  if (!saveCheck.writable) log.error(`Cloud save folder ${saves.root} is not writable: ${saveCheck.error}`);
+  if (saveCheck.missing) {
+    log.error(
+      `${saveCheck.missing} of ${saveCheck.checked} newest cloud saves are missing in ${saves.root}. ` +
+        'Is the network share mounted? If you changed savesDirectory, move the old saves folder there.',
+    );
+  }
 
   library.ensureFolders();
 

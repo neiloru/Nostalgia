@@ -14,17 +14,33 @@ services:
     container_name: nostalgia
     ports:
       - "8080:8080"
-    # Optional: timezone for log timestamps, IGDB credentials instead of in settings.yaml
+    # Optional: timezone for log timestamps, IGDB credentials instead of in settings.yaml,
+    # cloud saves in their own volume (see "saves" below)
     # environment:
     #   TZ: Europe/Berlin
     #   IGDB_CLIENT_ID: "..."
     #   IGDB_CLIENT_SECRET: "..."
+    #   NOSTALGIA_SAVES: /saves
     volumes:
       - ./config:/config            # settings.yaml
       - /path/to/library:/library   # games/{platform}/... and emulators/{platform}/...
-      - ./data:/data                # database + versioned cloud saves (back this up!)
+      - ./data:/data                # database (+ cloud saves unless moved below). Keep it local, back it up!
+      # Cloud saves on an SMB share: uncomment this line, the NOSTALGIA_SAVES variable and the
+      # "volumes:" block at the end of this file.
+      # - saves:/saves
     # Files the server creates in the library (platform folders, igdb/ artwork) belong to
     # this user. Uncomment and set your own UID:GID to avoid root-owned files; create ./config
     # and ./data first (mkdir config data) so that this user can write to them.
     # user: "1000:1000"
     restart: unless-stopped
+
+# SMB/CIFS share for the cloud saves, mounted by Docker itself: the container does not start
+# when the share is unreachable, so saves never end up on the local disk by accident.
+# uid/gid should match "user:" above (or 0 when running as root).
+# volumes:
+#   saves:
+#     driver: local
+#     driver_opts:
+#       type: cifs
+#       device: "//nas.local/games/nostalgia-saves"
+#       o: "username=nostalgia,password=secret,vers=3.0,uid=1000,gid=1000,file_mode=0660,dir_mode=0770"

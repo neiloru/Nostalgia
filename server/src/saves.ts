@@ -36,15 +36,38 @@ const toVersion = (r: SaveRow): SaveVersion => ({
 
 /**
  * Versioned cloud saves, stored per user and per emulator:
- *   <data>/saves/<userId>/<emulatorId>/v<version>-<timestamp>.zip
+ *   <savesDirectory>/<userId>/<emulatorId>/v<version>-<timestamp>.zip
+ * The database keeps paths relative to savesDirectory, so the folder can be moved.
  * Nothing in here ever deletes a save.
  */
 export class Saves {
-  private root: string;
+  readonly root: string;
 
-  constructor(private db: DB, dataPath: string) {
-    this.root = path.join(dataPath, 'saves');
+  constructor(private db: DB, savesPath: string) {
+    this.root = savesPath;
     fs.mkdirSync(this.root, { recursive: true });
+  }
+
+  /**
+   * Startup check, mainly for network shares: is the folder writable, and are the newest
+   * save files there? Missing files usually mean an unmounted share or a moved folder.
+   */
+  check(): { writable: boolean; error?: string; checked: number; missing: number } {
+    let writable = true;
+    let error: string | undefined;
+    const probe = path.join(this.root, `.write-test-${crypto.randomUUID()}`);
+    try {
+      fs.writeFileSync(probe, 'nostalgia');
+      fs.rmSync(probe, { force: true });
+    } catch (e) {
+      writable = false;
+      error = (e as Error).message;
+    }
+    const rows = this.db
+      .prepare('SELECT s.file FROM saves s JOIN (SELECT user_id, emulator_id, MAX(version) v FROM saves GROUP BY user_id, emulator_id) m ON m.user_id = s.user_id AND m.emulator_id = s.emulator_id AND m.v = s.version')
+      .all() as { file: string }[];
+    const missing = rows.filter((r) => !fs.existsSync(path.join(this.root, r.file))).length;
+    return { writable, error, checked: rows.length, missing };
   }
 
   latestAll(userId: number): SaveVersion[] {

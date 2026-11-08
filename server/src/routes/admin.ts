@@ -68,6 +68,8 @@ export function adminRouter(d: AdminDeps): Router {
       registration: settings.allowRegistration,
       libraryPath: settings.libraryPath,
       dataPath: settings.dataPath,
+      savesPath: settings.savesPath,
+      savesStorage: saves.check(),
       settingsFile: settings.file,
       jobs: jobs.status,
     });

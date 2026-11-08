@@ -139,7 +139,10 @@
             <div class="kv small-text">
               <div>Settings file</div><div class="mono">${esc(o.settingsFile)}</div>
               <div>Library</div><div class="mono">${esc(o.libraryPath)}</div>
-              <div>Data / saves</div><div class="mono">${esc(o.dataPath)}</div>
+              <div>Database</div><div class="mono">${esc(o.dataPath)}</div>
+              <div>Cloud saves</div><div><span class="mono">${esc(o.savesPath)}</span>
+                ${!o.savesStorage.writable ? `<span class="pill err">not writable</span>` : ''}
+                ${o.savesStorage.missing ? `<span class="pill err">${o.savesStorage.missing} save files missing</span>` : ''}</div>
               <div>IGDB</div><div>${o.igdbConfigured ? '<span class="pill ok">configured</span>' : '<span class="pill err">missing credentials</span>'}</div>
               <div>Registration</div><div>${o.registration ? '<span class="pill ok">open</span>' : '<span class="pill">closed</span>'}</div>
               <div>Metadata pending</div><div>${o.metadataMissing}</div>

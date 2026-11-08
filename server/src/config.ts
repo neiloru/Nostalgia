@@ -13,6 +13,8 @@ export interface Settings {
   port: number;
   host: string;
   dataDirectory: string;
+  /** Cloud saves; empty = "<dataDirectory>/saves". May point to a network share. */
+  savesDirectory: string;
   allowRegistration: boolean;
   scanIntervalMinutes: number;
   /** Check file hashes against hasheous.org during scheduled scans. */
@@ -30,6 +32,7 @@ const DEFAULTS: Settings = {
   port: 8080,
   host: '0.0.0.0',
   dataDirectory: './data',
+  savesDirectory: '',
   allowRegistration: true,
   scanIntervalMinutes: 30,
   hasheousOnScheduledScan: false,
@@ -53,8 +56,11 @@ igdbClientSecret: ""
 # --- optional ---
 port: 8080
 host: 0.0.0.0
-# Database and cloud saves live here. Cloud saves are never deleted.
+# Database (and, unless savesDirectory is set, cloud saves) live here. Keep it on a local disk.
 dataDirectory: ./data
+# Versioned cloud saves (never deleted). Empty = "<dataDirectory>/saves". Can be a network
+# share: //nas/games/nostalgia-saves (Windows UNC path) or a mounted /mnt/nas/nostalgia-saves.
+savesDirectory: ""
 allowRegistration: true
 scanIntervalMinutes: 30
 hasheousOnScheduledScan: false
@@ -64,6 +70,7 @@ export interface LoadedSettings extends Settings {
   file: string;
   libraryPath: string;
   dataPath: string;
+  savesPath: string;
   gamesPath: string;
   emulatorsPath: string;
 }
@@ -88,6 +95,7 @@ export function loadSettings(file = resolveSettingsFile()): LoadedSettings {
   if (env.NOSTALGIA_PORT) s.port = Number(env.NOSTALGIA_PORT);
   if (env.NOSTALGIA_LIBRARY) s.libraryDirectory = env.NOSTALGIA_LIBRARY;
   if (env.NOSTALGIA_DATA) s.dataDirectory = env.NOSTALGIA_DATA;
+  if (env.NOSTALGIA_SAVES) s.savesDirectory = env.NOSTALGIA_SAVES;
   if (env.IGDB_CLIENT_ID) s.igdbClientId = env.IGDB_CLIENT_ID;
   if (env.IGDB_CLIENT_SECRET) s.igdbClientSecret = env.IGDB_CLIENT_SECRET;
   s.port = Number(s.port) || DEFAULTS.port;
@@ -100,11 +108,14 @@ export function loadSettings(file = resolveSettingsFile()): LoadedSettings {
   const base = path.dirname(file);
   const libraryPath = path.resolve(base, s.libraryDirectory);
   const dataPath = path.resolve(base, s.dataDirectory);
+  s.savesDirectory = String(s.savesDirectory ?? '').trim();
+  const savesPath = s.savesDirectory ? path.resolve(base, s.savesDirectory) : path.join(dataPath, 'saves');
   return {
     ...s,
     file,
     libraryPath,
     dataPath,
+    savesPath,
     gamesPath: path.join(libraryPath, 'games'),
     emulatorsPath: path.join(libraryPath, 'emulators'),
   };
