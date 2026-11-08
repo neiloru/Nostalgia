@@ -46,6 +46,12 @@ runs on SteamOS's read-only system without installing anything.
 
 ### Run
 
+**Prebuilt package** (from the *Server build* workflow, see [Builds](#builds)): unpack
+`nostalgia-server-x.y.z-windows-x64.zip` or `nostalgia-server-x.y.z-linux-x64.tar.gz` and run
+`start.cmd` / `./start.sh`. Node.js is included; nothing else needs to be installed.
+
+**From source:**
+
 ```bash
 npm install
 npm run build -w server
@@ -161,12 +167,11 @@ npm run dist:linux -w client       # AppImage + tar.gz (build on Linux)  -> clie
 npm run icons -w client            # re-render build/icon.{png,ico} from build/icon.svg
 ```
 
-The GitHub Actions workflow in `.github/workflows/build.yml` builds the Windows installer, the
-Linux AppImage and the server bundle.
+Prebuilt clients come from the *Client build* workflow, see [Builds](#builds).
 
 ### Steam Deck / SteamOS
 
-1. Copy `Nostalgia-x.y.z-x86_64.AppImage` to the Deck and make it executable.
+1. Copy `Nostalgia-x.y.z-*.AppImage` to the Deck and make it executable.
 2. Desktop mode → Steam → *Add a Non-Steam Game* → select the AppImage.
 3. Start it from Game Mode. Inside gamescope Nostalgia starts in fullscreen automatically
    (otherwise use `--fullscreen` or Settings → Display).
@@ -243,7 +248,23 @@ examples/ example emu.yaml files
 ```bash
 npm run typecheck
 npm test            # server + shared tests (node:test)
+npm run package -w server   # self-contained server package for this OS -> server/release
 ```
+
+### Builds
+
+Both GitHub Actions workflows run **only manually**: *Actions* → pick the workflow → *Run
+workflow*. You can choose `all`, `windows` or `linux` and skip the tests. Typecheck and tests
+run first; the files are attached to the run as artifacts.
+
+| workflow | Windows | SteamOS / Linux |
+| --- | --- | --- |
+| [Client build](.github/workflows/client.yml) | `Nostalgia-x.y.z-x64-setup.exe` (installer), `Nostalgia-x.y.z-x64-portable.exe` | `Nostalgia-x.y.z-*.AppImage`, `Nostalgia-x.y.z-*.tar.gz` |
+| [Server build](.github/workflows/server.yml) | `nostalgia-server-x.y.z-windows-x64.zip` | `nostalgia-server-x.y.z-linux-x64.tar.gz` |
+
+Server packages contain the bundled server, the admin UI, a Node.js runtime, a start script
+and `settings.example.yaml`. The Linux server package is started and checked in CI before it
+is uploaded.
 
 ---
 

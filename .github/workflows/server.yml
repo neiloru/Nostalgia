@@ -1,0 +1,91 @@
+name: Server build
+
+# Manual only: Actions → "Server build" → Run workflow.
+# Each package is self-contained: bundled server, admin UI, Node.js runtime and a start script.
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platforms to build
+        type: choice
+        options: [all, windows, linux]
+        default: all
+      skip-tests:
+        description: Skip typecheck and tests
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: server-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Typecheck and tests
+    if: ${{ !inputs.skip-tests }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      # Server workspace only (skips the Electron download of the client).
+      - run: npm ci --workspace server
+      - run: npm run typecheck -w server
+      - run: npm test
+
+  windows:
+    name: Windows (zip)
+    needs: test
+    if: ${{ !failure() && !cancelled() && (inputs.platform == 'all' || inputs.platform == 'windows') }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --workspace server
+      - run: npm run package -w server
+      - uses: actions/upload-artifact@v7
+        with:
+          if-no-files-found: error
+          # Already a zip: upload as-is instead of zipping it again.
+          archive: false
+          path: server/release/*.zip
+
+  linux:
+    name: SteamOS / Linux (tar.gz)
+    needs: test
+    if: ${{ !failure() && !cancelled() && (inputs.platform == 'all' || inputs.platform == 'linux') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --workspace server
+      - run: npm run package -w server
+      - name: Smoke test the package
+        run: |
+          set -e
+          cd server/release
+          dir=$(find . -maxdepth 1 -type d -name 'nostalgia-server-*' | head -n1)
+          cd "$dir"
+          printf 'adminUsername: admin\nadminPassword: ci-test\nlibraryDirectory: ./library\nport: 8799\n' > settings.yaml
+          ./start.sh > server.log 2>&1 &
+          pid=$!
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:8799/api/health && break; sleep 1; done
+          curl -fs -o /dev/null http://127.0.0.1:8799/admin/ || { cat server.log; exit 1; }
+          kill "$pid"
+      - uses: actions/upload-artifact@v7
+        with:
+          if-no-files-found: error
+          # Unzipped upload keeps the tar.gz (and the file permissions inside) as-is.
+          archive: false
+          path: server/release/*.tar.gz

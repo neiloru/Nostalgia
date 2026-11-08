@@ -15,12 +15,14 @@ win:
   target:
     - target: nsis
     - target: portable
-  artifactName: Nostalgia-${version}-${arch}-${target}.${ext}
 nsis:
+  artifactName: Nostalgia-${version}-${arch}-setup.${ext}
   oneClick: false
   installerIcon: build/icon.ico
   uninstallerIcon: build/icon.ico
   allowToChangeInstallationDirectory: true
+portable:
+  artifactName: Nostalgia-${version}-${arch}-portable.${ext}
 linux:
   executableName: nostalgia
   icon: build/icons
