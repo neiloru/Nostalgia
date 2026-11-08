@@ -1,8 +1,24 @@
 # Nostalgia
 
+> [!WARNING]
+> **This project is completely vibe-coded.**
+> Every line of code, the configuration and this documentation was written by an AI
+> (Claude) from a short plan, without a human reviewing the code. It has been tested
+> against a small local library, but not audited or used in production. Expect bugs,
+> keep backups of your games and saves, and don't expose the server to the internet
+> without putting your own security in front of it. Use at your own risk.
+
 Self-hosted retro game library: a **server** that holds your games, emulators, users and
 versioned cloud saves, and a **launcher client** (Windows + SteamOS/Linux) that looks and
 feels like a modern game store. It can be used with mouse, keyboard or a game controller.
+
+![Vault: every game on the server, with IGDB covers and filters](docs/screenshots/vault.png)
+
+| Store page | Library |
+| --- | --- |
+| [![Store page with IGDB artwork, description and facts](docs/screenshots/store.png)](docs/screenshots/store.png) | [![Library with play time, cloud saves and per-game settings](docs/screenshots/library.png)](docs/screenshots/library.png) |
+| **Downloads** (resumable, pausable) | **Admin UI**: games |
+| [![Downloads with paused and finished items](docs/screenshots/downloads.png)](docs/screenshots/downloads.png) | [![Admin games list](docs/screenshots/admin-games.png)](docs/screenshots/admin-games.png) |
 
 ```
 ┌──────────────────────────── server (Node.js) ─────────────────────────────┐
@@ -123,6 +139,8 @@ plus environment variables (`%USERPROFILE%`, `$HOME`, `${VAR}`) and `~`.
 The old `saveFolder:` key (single folder) is accepted too. emu.yaml can be edited in the
 admin UI (the previous version is kept in `data/emu-yaml-history`).
 
+![Admin UI: emulators with their emu.yaml status](docs/screenshots/admin-emulators.png)
+
 ### Cloud saves
 
 * Saves are stored **per user and per emulator**, because the save location belongs to the
@@ -172,8 +190,9 @@ Linux AppImage and the server bundle.
   options.
 * **Playing**: the game starts in the emulator from emu.yaml. Play time is tracked and uploaded.
   If the launcher crashes mid-session, the play time is recovered from a heartbeat file.
-* **Cloud saves**: on start (and before every launch) the newest version of every installed
-  emulator is downloaded. After the emulator closes, changed saves are uploaded; failed uploads
+* **Cloud saves**: on start, right after an emulator is installed, and before every launch, the
+  newest version of every installed emulator is downloaded (also when the local save folder
+  went missing, e.g. after reinstalling the emulator). After the emulator closes, changed saves are uploaded; failed uploads
   are retried. Local saves that were never uploaded are copied to a backup folder before they
   are replaced. Restoring an older version uploads it again as the newest version.
 * **Offline**: the catalog, details and artwork are cached. Without a connection, games that are
@@ -225,3 +244,11 @@ examples/ example emu.yaml files
 npm run typecheck
 npm test            # server + shared tests (node:test)
 ```
+
+---
+
+## License
+
+[MIT](LICENSE). Game metadata and artwork come from [IGDB](https://www.igdb.com) and are subject
+to their terms; hash lookups use [Hasheous](https://hasheous.org). No games, BIOS files or
+emulators are included in this repository.

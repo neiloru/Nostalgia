@@ -2,6 +2,7 @@
   "name": "nostalgia",
   "private": true,
   "version": "1.0.0",
+  "license": "MIT",
   "description": "Retro game library server + launcher client with cloud saves",
   "workspaces": ["shared", "server", "client"],
   "scripts": {
