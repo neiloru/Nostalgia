@@ -24,7 +24,8 @@ WORKDIR /app
 ENV NODE_ENV=production \
     NOSTALGIA_SETTINGS=/config/settings.yaml \
     NOSTALGIA_LIBRARY=/library \
-    NOSTALGIA_DATABASE=/database \n    NOSTALGIA_SAVES=/saves
+    NOSTALGIA_DATABASE=/database \
+    NOSTALGIA_SAVES=/saves
 # server.js is fully bundled: no node_modules needed.
 COPY --from=build /src/server/dist/ ./
 COPY server/settings.example.yaml LICENSE ./
