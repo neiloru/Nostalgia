@@ -6,7 +6,7 @@ import { Core } from './core.js';
 import { DownloadManager, MANIFEST } from './downloads.js';
 import { SaveSync } from './savesync.js';
 import { Launcher } from './launcher.js';
-import type { ClientSettings, GameSettings, ItemKind } from './types.js';
+import type { ClientSettings, GameSettings, InstalledItem, ItemKind } from './types.js';
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'nostalgia', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
@@ -273,6 +273,10 @@ app.whenReady().then(async () => {
   core.on('toast', (t) => send('toast', t));
   downloads.on('update', (jobs) => send('downloads', jobs));
   core.on('login', () => void saves.syncAll('login'));
+  // A freshly installed emulator gets the newest cloud save right away, not only on the next start.
+  downloads.on('installed', (item: InstalledItem) => {
+    if (item.kind === 'emulator' && core.settings.autoSyncSaves) void saves.syncDown(item.id, 'install').catch(() => undefined);
+  });
 
   registerMediaProtocol();
   createWindow();

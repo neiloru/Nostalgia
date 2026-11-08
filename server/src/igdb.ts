@@ -146,6 +146,8 @@ export class Igdb {
   async downloadInto(gameDir: string, igdbId: number): Promise<GameMetadata> {
     const g = await this.fetchGame(igdbId);
     const dir = path.join(gameDir, 'igdb');
+    // Never recreate a game folder that was renamed or moved while the download was queued.
+    if (!fs.existsSync(gameDir)) throw new Error(`Game folder no longer exists: ${gameDir}`);
     fs.mkdirSync(dir, { recursive: true });
 
     const cover = g.cover ? await this.saveImage(`${IMG}/t_cover_big_2x/${g.cover.image_id}.jpg`, path.join(dir, 'cover.jpg')) : false;

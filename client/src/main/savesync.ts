@@ -166,7 +166,9 @@ export class SaveSync {
         if (files.length && fingerprint !== st.fingerprint) return this.upload(emulatorId, files, fingerprint, 'first upload');
         return 'nothing';
       }
-      if (latest.id === st.versionId) {
+      // Local saves vanished since the last sync (emulator reinstalled, folder deleted): download them again.
+      const localMissing = !files.length && !!st.fingerprint && fingerprint !== st.fingerprint;
+      if (latest.id === st.versionId && !localMissing) {
         if (fingerprint !== st.fingerprint && files.length) return this.upload(emulatorId, files, fingerprint, 'unsynced changes');
         this.core.setSaveState(emulatorId, { lastResult: 'up to date', lastError: undefined, syncedAt: new Date().toISOString() });
         return 'up-to-date';
