@@ -218,17 +218,14 @@ html[data-input='gamepad'] .card:focus .card-cover, html[data-input='keyboard'] 
 .lib-list > .search { margin: 16px 14px 8px; }
 .lib-toggles { padding: 0 14px 8px; border-bottom: 1px solid var(--line); }
 .lib-items { overflow-y: auto; padding: 8px; display: grid; gap: 2px; align-content: start; flex: 1; }
-.lib-item { display: flex; gap: 12px; align-items: center; background: none; border: 0; border-radius: 8px; padding: 6px 8px; text-align: left; cursor: pointer; width: 100%; color: var(--muted); }
+.lib-item { display: flex; gap: 10px; align-items: center; background: none; border: 0; border-radius: 6px; padding: 7px 10px; text-align: left; cursor: pointer; width: 100%; color: var(--muted); }
 .lib-item:hover { background: var(--panel); color: var(--text); }
 .lib-item.active { background: var(--panel2); color: var(--text); }
 .lib-item.installed .lib-name { color: var(--text); }
 .lib-item.unavailable { opacity: .35; filter: grayscale(1); }
-.lib-thumb { width: 36px; height: 48px; border-radius: 5px; overflow: hidden; flex: none; background: var(--panel); }
-.lib-thumb > * { width: 100%; height: 100%; object-fit: cover; font-size: 9px; padding: 3px; }
-.lib-thumb .emu-cover strong, .lib-thumb .emu-cover small, .lib-thumb .cover-fallback small { display: none; }
-.lib-thumb .cover-fallback strong { font-size: 9px; }
-.lib-name { display: grid; font-weight: 600; font-size: 14px; min-width: 0; flex: 1; }
-.lib-name small { font-weight: 400; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-name { font-weight: 600; font-size: 14px; min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-progress { font-size: 12px; color: var(--accent); flex: none; }
+.lib-section { padding: 12px 10px 4px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .lib-detail { overflow-y: auto; min-height: 0; }
 .lib-detail > .offline-banner { margin: 16px 28px 0; }
 .detail-hero { position: relative; height: 300px; background: #161a23 center 30% / cover no-repeat; display: flex; align-items: flex-end; }

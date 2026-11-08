@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { SaveVersion } from '@nostalgia/shared';
+import { Fragment, useEffect, useMemo, useState } from 'react';
+import { platformInfo, type SaveVersion } from '@nostalgia/shared';
 import { act, call } from '../bridge';
 import { ActionButtons, Cover, OfflineBanner, itemStatus, type AnyItem } from '../common';
 import { Confirm, Icon, Modal, Select, Toggle, fmtBytes, fmtDate, fmtDuration, fmtRelative } from '../ui';
@@ -55,6 +55,24 @@ export function Library({
       });
   }, [state, jobs, q, showEmulators, installedOnly]);
 
+  // Names that appear on more than one platform get the short platform name appended.
+  const duplicates = useMemo(() => {
+    const platforms = new Map<string, Set<string>>();
+    const add = (kind: ItemKind, name: string, platform: string) => {
+      const key = `${kind}:${name.toLowerCase()}`;
+      platforms.set(key, (platforms.get(key) ?? new Set()).add(platform));
+    };
+    for (const id of state.library.games) {
+      const g = state.catalog.games.find((x) => x.id === id);
+      if (g) add('game', g.name, g.platform);
+    }
+    for (const id of state.library.emulators) {
+      const e = state.catalog.emulators.find((x) => x.id === id);
+      if (e) add('emulator', e.name, e.platform);
+    }
+    return new Set([...platforms].filter(([, p]) => p.size > 1).map(([k]) => k));
+  }, [state.library, state.catalog]);
+
   const current = selected && items.find((i) => i.kind === selected.kind && i.id === selected.id) ? selected : items[0] ? { kind: items[0].kind, id: items[0].id } : null;
 
   return (
@@ -69,31 +87,26 @@ export function Library({
           <Toggle label="Installed only" checked={installedOnly} onChange={setInstalledOnly} />
         </div>
         <div className="lib-items">
-          {items.map((it) => {
+          {items.map((it, i) => {
             const st = itemStatus(state, jobs, it.kind, it.id);
             const active = current?.kind === it.kind && current.id === it.id;
             const unavailable = !state.online && !st.installed;
+            const label = duplicates.has(`${it.kind}:${it.name.toLowerCase()}`) ? `${it.name} (${platformInfo(it.platform).short})` : it.name;
             return (
-              <button
-                key={`${it.kind}:${it.id}`}
-                className={`lib-item ${active ? 'active' : ''} ${unavailable ? 'unavailable' : ''} ${st.installed ? 'installed' : ''}`}
-                data-autofocus={active ? true : undefined}
-                onClick={() => setSelected({ kind: it.kind, id: it.id })}
-                onFocus={() => setSelected({ kind: it.kind, id: it.id })}
-              >
-                <span className="lib-thumb">
-                  <Cover item={it} />
-                </span>
-                <span className="lib-name">
-                  {it.name}
-                  <small>
-                    {it.kind === 'emulator' ? 'Emulator · ' : ''}
-                    {it.platformName}
-                    {st.job ? ` · ${Math.round((st.job.receivedBytes / Math.max(1, st.job.totalBytes)) * 100)}%` : ''}
-                  </small>
-                </span>
-                {state.running?.gameId === it.id && it.kind === 'game' && <span className="pulse" />}
-              </button>
+              <Fragment key={`${it.kind}:${it.id}`}>
+                {it.kind === 'emulator' && items[i - 1]?.kind !== 'emulator' && <div className="lib-section">Emulators</div>}
+                <button
+                  className={`lib-item ${active ? 'active' : ''} ${unavailable ? 'unavailable' : ''} ${st.installed ? 'installed' : ''}`}
+                  data-autofocus={active ? true : undefined}
+                  title={label}
+                  onClick={() => setSelected({ kind: it.kind, id: it.id })}
+                  onFocus={() => setSelected({ kind: it.kind, id: it.id })}
+                >
+                  <span className="lib-name">{label}</span>
+                  {st.job && <span className="lib-progress">{Math.round((st.job.receivedBytes / Math.max(1, st.job.totalBytes)) * 100)}%</span>}
+                  {state.running?.gameId === it.id && it.kind === 'game' && <span className="pulse" />}
+                </button>
+              </Fragment>
             );
           })}
           {!items.length && (
