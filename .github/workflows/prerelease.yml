@@ -50,7 +50,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # download-artifact unpacks .zip files (the Windows server package) into a folder:
+          # pack each folder again as <name>.zip with the same top-level folder as the original.
+          for d in dist/*/; do
+            [ -d "$d" ] || continue
+            n=$(basename "$d")
+            if [ "$(ls -A "$d")" = "$n" ] && [ -d "$d/$n" ]; then
+              (cd "$d" && zip -qry "../$n.zip" "$n")   # dist/<name>/<name>/...
+            else
+              (cd dist && zip -qry "$n.zip" "$n")      # dist/<name>/... is the top-level folder
+            fi
+            rm -rf "$d"
+          done
           ls -la dist
+          if find dist -mindepth 1 -type d | grep -q .; then echo "unexpected folders in dist" >&2; exit 1; fi
           version=$(node -p "require('./package.json').version")
           short=${GITHUB_SHA::7}
           tag="v${version}-pre.${GITHUB_RUN_NUMBER}"
