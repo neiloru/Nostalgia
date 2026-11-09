@@ -55,6 +55,9 @@ jobs:
           # pack each folder again as <name>.zip with the same top-level folder as the original.
           for d in dist/*/; do
             [ -d "$d" ] || continue
+            # download-artifact drops Unix permissions: the app's program must stay executable,
+            # or macOS says "The application can't be opened".
+            find "$d" -path '*.app/Contents/MacOS/*' -type f -exec chmod +x {} +
             n=$(basename "$d")
             if [ "$(ls -A "$d")" = "$n" ] && [ -d "$d/$n" ]; then
               (cd "$d" && zip -qry "../$n.zip" "$n")   # dist/<name>/<name>/...
