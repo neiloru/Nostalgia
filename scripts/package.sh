@@ -35,8 +35,10 @@ out="$root/release"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-archive() { # archive <folder name> in $tmp -> $out/<name>.zip (Windows, macOS) or .tar.gz
-  local name=$1
+# archive <folder name in $tmp> [app]: $out/<name>.zip on Windows and for the macOS app bundle
+# (ditto keeps the bundle and its signature intact), else $out/<name>.tar.gz.
+archive() {
+  local name=$1 kind=${2:-}
   if [ "$os" = windows ]; then
     rm -f "$out/$name.zip"
     # bsdtar from Windows writes zip files (Git Bash's GNU tar cannot).
@@ -44,7 +46,7 @@ archive() { # archive <folder name> in $tmp -> $out/<name>.zip (Windows, macOS) 
     bsdtar="$(cygpath -u "${SYSTEMROOT:-C:\\Windows}")/System32/tar.exe"
     (cd "$tmp" && "$bsdtar" -a -c -f "$(cygpath -w "$out/$name.zip")" "$name")
     echo "release/$name.zip"
-  elif [ "$os" = macos ]; then
+  elif [ "$os" = macos ] && [ "$kind" = app ]; then
     rm -f "$out/$name.zip"
     (cd "$tmp" && ditto -c -k --keepParent "$name" "$out/$name.zip")
     echo "release/$name.zip"
@@ -153,6 +155,6 @@ EOF
 EOF
     # Not notarized: an ad-hoc signature only (Apple Silicon refuses to run unsigned code).
     codesign --force --deep --sign - "$dir/Nostalgia.app"
-    archive "$name"
+    archive "$name" app
     ;;
 esac
