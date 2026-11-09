@@ -36,6 +36,9 @@ fn status_label(s: DownloadStatus) -> &'static str {
 impl AppView {
     pub fn render_downloads(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> Div {
         let nav = self.nav.clone();
+        // Everything on the page is built inside the scroll area (focused items scroll into view).
+        let handle = self.scroll("downloads");
+        scroll_begin(&nav, "downloads", &handle);
         let state = self.state.clone();
         let jobs = self.jobs.clone();
         let active: Vec<&DownloadJob> = jobs.iter().filter(|j| j.status != DownloadStatus::Done).collect();
@@ -157,7 +160,6 @@ impl AppView {
             }
             page = page.child(d);
         }
-        let handle = self.scroll("downloads");
-        div().size_full().child(scroll_area(&nav, "downloads", &handle, || page).size_full())
+        div().size_full().child(scroll_end(&nav, "downloads", &handle, page).size_full())
     }
 }

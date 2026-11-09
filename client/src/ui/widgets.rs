@@ -109,12 +109,26 @@ pub fn with_bounds<E: ParentElement + Styled>(el: E, nav: &NavRc, key: String) -
     )
 }
 
-/// A vertically scrolling area; focused children are scrolled into view.
-pub fn scroll_area(nav: &NavRc, key: &str, handle: &ScrollHandle, build: impl FnOnce() -> Div) -> Stateful<Div> {
+/// A vertically scrolling area whose focused children are scrolled into view: `scroll_begin`,
+/// build the children, then `scroll_end` with them. Items register with the scroll area (and with
+/// groups) while they are created, so children built before `scroll_begin` never scroll into view.
+pub fn scroll_begin(nav: &NavRc, key: &str, handle: &ScrollHandle) {
     nav.borrow_mut().push_scroll(key.to_string().into(), handle.clone());
-    let content = build();
+}
+
+pub fn scroll_end(nav: &NavRc, key: &str, handle: &ScrollHandle, content: impl IntoElement) -> Stateful<Div> {
     nav.borrow_mut().pop_scroll();
     div().id(SharedString::from(format!("scroll-{key}"))).overflow_y_scroll().track_scroll(handle).child(content)
+}
+
+/// `group` in two steps (see `scroll_begin`).
+pub fn group_begin(nav: &NavRc, key: &str, remember: bool) {
+    nav.borrow_mut().push_group(key.to_string().into(), remember);
+}
+
+pub fn group_end(nav: &NavRc, key: &str, el: Div) -> Div {
+    nav.borrow_mut().pop_group();
+    with_bounds(el, nav, format!("g:{key}"))
 }
 
 #[derive(Clone, Copy, PartialEq)]

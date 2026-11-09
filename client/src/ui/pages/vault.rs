@@ -127,6 +127,7 @@ impl AppView {
             ),
         ];
         let filters_el = group(&nav, "filters", true, || {
+            scroll_begin(&nav, "vault-filters", &filter_handle);
             let mut col = div().flex().flex_col().gap(r(8.)).px(r(16.)).py(r(24.)).child(text_input(&nav, "vault:search", &self.inputs.vault_search, true, cx));
             for (key, label, opts, value) in selects {
                 let current = opts.iter().find(|(v, _)| *v == value).map(|(_, l)| l.clone()).unwrap_or_else(|| "–".into());
@@ -189,7 +190,7 @@ impl AppView {
                     cx,
                 ));
             }
-            div().h_full().child(scroll_area(&nav, "vault-filters", &filter_handle, || col).h_full())
+            div().h_full().child(scroll_end(&nav, "vault-filters", &filter_handle, col).h_full())
         })
         .w(r(filters_w))
         .flex_none()
@@ -204,6 +205,10 @@ impl AppView {
         let card_w = (main_w - gap * (cols - 1.)) / cols;
         let main_handle = self.scroll("vault-main");
         let count = items.len();
+        // The cards are built between begin and end so they belong to the group and scroll area
+        // (moving the focus scrolls them into view).
+        group_begin(&nav, "vault-main", true);
+        scroll_begin(&nav, "vault-main", &main_handle);
         let mut grid = div().flex().flex_wrap().gap_x(r(gap)).gap_y(r(26.));
         for (i, it) in items.iter().enumerate() {
             grid = grid.child(self.game_card(it, card_w, i == 0, cx));
@@ -216,7 +221,7 @@ impl AppView {
         } else {
             "No cached catalog available offline."
         };
-        let main_el = group(&nav, "vault-main", true, || {
+        let main_el = {
             let content = div()
                 .px(r(32.))
                 .pt(r(24.))
@@ -232,8 +237,9 @@ impl AppView {
                         .child(div().pb(r(4.)).text_color(muted()).child(format!("{count} {}", if count == 1 { "title" } else { "titles" }))),
                 )
                 .child(if count > 0 { grid.into_any_element() } else { div().py(r(60.)).text_center().text_color(muted()).child(empty_msg).into_any_element() });
-            div().size_full().child(scroll_area(&nav, "vault-main", &main_handle, || content).size_full())
-        })
+            let area = scroll_end(&nav, "vault-main", &main_handle, content).size_full();
+            group_end(&nav, "vault-main", div().size_full().child(area))
+        }
         .flex_1()
         .min_w_0()
         .h_full();

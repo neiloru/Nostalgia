@@ -215,7 +215,10 @@ impl AppView {
         let count = self.modals.len();
         for idx in 0..count {
             nav.borrow_mut().push_scope();
+            // The body's items belong to the "modal" group (initial focus); the close button does not.
+            group_begin(&nav, "modal", false);
             let (title, wide, body) = self.modal_body(idx, window, cx);
+            nav.borrow_mut().pop_group();
             let close = icon_btn(format!("modal:{idx}:close"), "x", &nav, action(|this, window, cx| this.close_modal(window, cx)), cx);
             let mut m = div()
                 .id(SharedString::from(format!("modal-{idx}")))
@@ -243,7 +246,7 @@ impl AppView {
                         .child(close),
                 );
             }
-            let content = group(&nav, "modal", false, || div().flex().flex_col().gap(r(14.)).px(r(24.)).pt(r(18.)).pb(r(24.)).min_h_0().child(body));
+            let content = with_bounds(div().flex().flex_col().gap(r(14.)).px(r(24.)).pt(r(18.)).pb(r(24.)).min_h_0().child(body), &nav, "g:modal".into());
             m = m.child(content);
             nav.borrow_mut().pop_scope();
             out.push(
@@ -267,9 +270,13 @@ impl AppView {
     fn modal_body(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) -> (Option<String>, bool, AnyElement) {
         let nav = self.nav.clone();
         let _ = window;
+        let list_handle = self.scroll("modal-list");
+        let versions_handle = self.scroll("versions");
         match &self.modals[idx].0 {
             Modal::Select { title, options, selected, on_pick } => {
                 let title = title.clone();
+                let handle = list_handle;
+                scroll_begin(&nav, "modal-list", &handle);
                 let mut list = div().flex().flex_col().gap(r(2.));
                 for (i, o) in options.iter().enumerate() {
                     let id: SharedString = format!("opt:{idx}:{i}").into();
@@ -300,8 +307,7 @@ impl AppView {
                     });
                     list = list.child(focusable_ext(row, &nav, id, Ring::Inset(RADIUS), Some(act), false, sel, cx));
                 }
-                let handle = self.scroll("modal-list");
-                (Some(title), false, scroll_area(&nav, "modal-list", &handle, || list).max_h(r(560.)).into_any_element())
+                (Some(title), false, scroll_end(&nav, "modal-list", &handle, list).max_h(r(560.)).into_any_element())
             }
             Modal::Confirm { title, message, confirm, danger, on_confirm } => {
                 let title = title.clone();
@@ -406,6 +412,8 @@ impl AppView {
                     None => body = body.child(div().text_color(muted()).child("Loading…")),
                     Some(v) if v.is_empty() => body = body.child(div().text_color(muted()).child("No cloud saves yet.")),
                     Some(v) => {
+                        let handle = versions_handle;
+                        scroll_begin(&nav, "versions", &handle);
                         let mut list = div().flex().flex_col().gap(r(2.));
                         for (i, ver) in v.iter().enumerate() {
                             let id: SharedString = format!("ver:{idx}:{}", ver.id).into();
@@ -467,8 +475,7 @@ impl AppView {
                             });
                             list = list.child(focusable_ext(row, &nav, id, Ring::Inset(RADIUS), act, false, i == 0, cx));
                         }
-                        let handle = self.scroll("versions");
-                        body = body.child(scroll_area(&nav, "versions", &handle, || list).max_h(r(480.)));
+                        body = body.child(scroll_end(&nav, "versions", &handle, list).max_h(r(480.)));
                     }
                 }
                 let client = self.client.clone();

@@ -130,6 +130,8 @@ pub struct AppView {
     // scroll areas
     pub scrolls: HashMap<&'static str, ScrollHandle>,
     pending_focus: Option<FocusTarget>,
+    /// Frames a pending focus has waited for its target to appear.
+    pending_focus_tries: u8,
     _subs: Vec<Subscription>,
 }
 
@@ -259,6 +261,7 @@ impl AppView {
             details_loading: HashSet::new(),
             scrolls: HashMap::new(),
             pending_focus: None,
+            pending_focus_tries: 0,
             _subs: subs,
         };
         view.apply_zoom(window, cx);
@@ -384,6 +387,7 @@ impl AppView {
     // ------------------------------------------------------------------ focus
     pub fn request_focus(&mut self, target: FocusTarget, window: &mut Window, cx: &mut Context<Self>) {
         self.pending_focus = Some(target);
+        self.pending_focus_tries = 0;
         // `on_next_frame` runs before that frame is rendered, i.e. with the bounds of the previous
         // frame. Wait one more frame so the changed UI (new page, closed dialog) is laid out.
         cx.on_next_frame(window, |_, window, cx| {
@@ -404,8 +408,16 @@ impl AppView {
                 FocusTarget::Id(id) => n.index_of(id).or_else(|| n.recover_index()).or_else(|| n.first_index(None)),
             }
         };
-        if let Some(i) = idx {
-            self.focus_index(i, window, cx);
+        match idx {
+            Some(i) => self.focus_index(i, window, cx),
+            // The target is not laid out yet (a page that is still being built): keep the request
+            // and try again on the next frames instead of leaving the focus on a stale item.
+            None if self.pending_focus_tries < 30 => {
+                self.pending_focus = Some(target);
+                self.pending_focus_tries += 1;
+                cx.on_next_frame(window, |this, window, cx| this.apply_pending_focus(window, cx));
+            }
+            None => {}
         }
         cx.notify();
     }

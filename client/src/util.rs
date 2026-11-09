@@ -92,6 +92,8 @@ pub fn fmt_relative(iso: Option<&str>) -> String {
         format!("{} min ago", diff / 60)
     } else if diff < 86400 {
         format!("{} h ago", diff / 3600)
+    } else if diff < 86400 * 2 {
+        "1 day ago".into()
     } else if diff < 86400 * 30 {
         format!("{} days ago", diff / 86400)
     } else {

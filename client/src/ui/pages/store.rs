@@ -24,11 +24,15 @@ impl AppView {
     pub fn render_store(&mut self, kind: ItemKind, id: i64, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let nav = self.nav.clone();
         let handle = self.scroll("store");
+        // The page is built between begin and end so its items belong to the group and scroll area.
+        group_begin(&nav, "store", false);
+        scroll_begin(&nav, "store", &handle);
         let content = match kind {
             ItemKind::Game => self.store_game(id, window, cx),
             ItemKind::Emulator => self.store_emulator(id, window, cx),
         };
-        group(&nav, "store", false, || div().size_full().child(scroll_area(&nav, "store", &handle, || content).size_full())).size_full()
+        let area = scroll_end(&nav, "store", &handle, content).size_full();
+        group_end(&nav, "store", div().size_full().child(area)).size_full()
     }
 
     fn back_button(&mut self, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -91,6 +95,7 @@ impl AppView {
         let hero = self.hero(hero_img, back, cover, info, narrow, 440.);
 
         // ---- body
+        group_begin(&nav, "store-main", false);
         let mut main = div().flex().flex_col().flex_1().min_w_0();
         let section = |title: &str, body: AnyElement| div().flex().flex_col().mb(r(34.)).child(h2(title.to_string())).child(body);
         let prose = |t: String| div().max_w(r(720.)).line_height(r(26.)).text_color(text2()).child(t).into_any_element();
@@ -128,6 +133,7 @@ impl AppView {
         if m.is_none() {
             main = main.child(div().text_color(muted()).child(if state.online { "No details from IGDB yet." } else { "Details are not cached on this device." }));
         }
+        let main_group = group_end(&nav, "store-main", main);
 
         let join = |v: Option<&Vec<String>>| v.filter(|v| !v.is_empty()).map(|v| v.join(", "));
         let facts = div()
@@ -148,7 +154,6 @@ impl AppView {
             .children(fact("Size", Some(format!("{} · {} files", fmt_bytes(g.size_bytes as u64), g.file_count))))
             .children(fact("Installed in", installed_path));
         let emus: Vec<_> = state.catalog_emulators.iter().filter(|e| e.platform == g.platform).cloned().collect();
-        let side_main = main;
         let side = group(&nav, "store-side", false, || {
             let mut side = div().flex().flex_col().gap(r(18.)).w(if narrow { relative(1.) } else { r(320.).into() }).flex_none().child(facts);
             if !emus.is_empty() {
@@ -182,7 +187,6 @@ impl AppView {
             }
             side
         });
-        let main_group = group(&nav, "store-main", false, || side_main);
         let body = div()
             .flex()
             .when(narrow, |d| d.flex_col())

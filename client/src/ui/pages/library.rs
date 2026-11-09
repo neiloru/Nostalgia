@@ -51,6 +51,18 @@ impl AppView {
             plats.entry(format!("emulator:{}", it.name.to_lowercase())).or_default().insert(it.platform.clone());
         }
 
+        // Moving through the list selects the entry (like the onFocus handler). Done before the
+        // detail panel is chosen, so it shows the focused entry in this frame and not one step late.
+        if let Some(f) = nav.borrow().focused.clone()
+            && let Some(rest) = f.strip_prefix("lib:")
+            && let Some((k, id)) = rest.split_once(':')
+            && let Ok(id) = id.parse::<i64>()
+        {
+            let kind = if k == "game" { ItemKind::Game } else { ItemKind::Emulator };
+            if items.iter().any(|i| i.kind() == kind && i.id() == id) {
+                self.lib_sel = Some((kind, id));
+            }
+        }
         let current = match self.lib_sel {
             Some((k, id)) if items.iter().any(|i| i.kind() == k && i.id() == id) => Some((k, id)),
             _ => items.first().map(|i| (i.kind(), i.id())),
@@ -60,6 +72,9 @@ impl AppView {
 
         let list_handle = self.scroll("lib-list");
         let list = group(&nav, "lib-list", true, || {
+            // Rows are built inside the scroll area (scrolled into view when focused); the search
+            // box and toggles above it are not.
+            scroll_begin(&nav, "lib-list", &list_handle);
             let mut rows = div().flex().flex_col().gap(r(2.)).p(r(8.));
             for (i, it) in items.iter().enumerate() {
                 if it.kind() == ItemKind::Emulator && items.get(i.wrapping_sub(1)).is_none_or(|p| p.kind() != ItemKind::Emulator) {
@@ -118,6 +133,7 @@ impl AppView {
                 }
                 rows = rows.child(e);
             }
+            let rows_area = scroll_end(&nav, "lib-list", &list_handle, rows);
             div()
                 .flex()
                 .flex_col()
@@ -143,7 +159,7 @@ impl AppView {
                             cx.notify();
                         }), cx)),
                 )
-                .child(div().flex_1().min_h_0().child(scroll_area(&nav, "lib-list", &list_handle, || rows).size_full()))
+                .child(div().flex_1().min_h_0().child(rows_area.size_full()))
         })
         .w(r(list_w))
         .flex_none()
@@ -151,20 +167,9 @@ impl AppView {
         .border_r_1()
         .border_color(line());
 
-        // Moving through the list selects the entry (like the onFocus handler).
-        if let Some(f) = nav.borrow().focused.clone()
-            && let Some(rest) = f.strip_prefix("lib:")
-            && let Some((k, id)) = rest.split_once(':')
-            && let Ok(id) = id.parse::<i64>()
-        {
-            let kind = if k == "game" { ItemKind::Game } else { ItemKind::Emulator };
-            if items.iter().any(|i| i.kind() == kind && i.id() == id) && self.lib_sel != Some((kind, id)) {
-                self.lib_sel = Some((kind, id));
-                cx.notify();
-            }
-        }
-
         let detail_handle = self.scroll("lib-detail");
+        group_begin(&nav, "lib-detail", false);
+        scroll_begin(&nav, "lib-detail", &detail_handle);
         let detail_content = {
             let mut d = div().flex().flex_col();
             if !state.online {
@@ -176,7 +181,8 @@ impl AppView {
                 None => d,
             }
         };
-        let detail = group(&nav, "lib-detail", false, || div().size_full().child(scroll_area(&nav, "lib-detail", &detail_handle, || detail_content).size_full())).flex_1().min_w_0().h_full();
+        let detail_area = scroll_end(&nav, "lib-detail", &detail_handle, detail_content).size_full();
+        let detail = group_end(&nav, "lib-detail", div().size_full().child(detail_area)).flex_1().min_w_0().h_full();
         div().flex().size_full().child(list).child(detail)
     }
 

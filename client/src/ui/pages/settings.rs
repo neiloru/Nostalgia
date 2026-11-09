@@ -11,6 +11,9 @@ use std::rc::Rc;
 impl AppView {
     pub fn render_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let nav = self.nav.clone();
+        // Everything on the page is built inside the scroll area (focused items scroll into view).
+        let handle = self.scroll("settings");
+        scroll_begin(&nav, "settings", &handle);
         let state = self.state.clone();
         let s = state.settings.clone();
         let client = self.client.clone();
@@ -234,8 +237,7 @@ impl AppView {
             grid = grid.child(p.w(r(panel_w)));
         }
         let page = div().flex().flex_col().px(r(32.)).pt(r(24.)).pb(r(50.)).child(h1("Settings").mb(r(22.))).child(grid);
-        let handle = self.scroll("settings");
-        div().size_full().child(scroll_area(&nav, "settings", &handle, || page).size_full())
+        div().size_full().child(scroll_end(&nav, "settings", &handle, page).size_full())
     }
 
     fn change_password(&mut self, window: &mut Window, cx: &mut Context<Self>) {
