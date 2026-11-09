@@ -1,6 +1,7 @@
 //! Building blocks styled like the Electron UI, all registered with the navigation.
 
 use super::nav::{ActionFn, NavRc};
+use super::theme::surface;
 use super::theme::*;
 use super::AppView;
 use gpui_kit::prelude::*;

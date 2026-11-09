@@ -4046,7 +4046,7 @@ dependencies = [
 
 [[package]]
 name = "nostalgia"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "anyhow",
  "dirs 7.0.0",
@@ -4072,7 +4072,7 @@ dependencies = [
 
 [[package]]
 name = "nostalgia-server"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -4103,7 +4103,7 @@ dependencies = [
 
 [[package]]
 name = "nostalgia-shared"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "icu_collator",
  "indexmap",

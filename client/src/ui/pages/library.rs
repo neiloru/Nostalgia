@@ -2,6 +2,7 @@
 
 use super::store::hero_name;
 use super::{AnyItem, item_status, text_input, view_width};
+use crate::ui::theme::surface;
 use crate::ui::theme::*;
 use crate::ui::widgets::*;
 use crate::ui::{AppView, Modal, PickFn, SelectOption};
