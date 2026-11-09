@@ -1,7 +1,8 @@
 name: Build and pre-release
 
-# Every push to main: tests, client and server for Windows and SteamOS/Linux, then a GitHub
-# pre-release "v<version>-pre.<run>" with all files. Can also be started by hand.
+# Every push to main: tests, client and server for Windows, SteamOS/Linux and macOS (Apple
+# Silicon), then a GitHub pre-release "v<version>-pre.<run>" with all files. The version is
+# [workspace.package] version in Cargo.toml (scripts/bump-version.sh). Can also be started by hand.
 on:
   push:
     branches: [main]
@@ -50,7 +51,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # download-artifact unpacks .zip files (the Windows server package) into a folder:
+          # download-artifact unpacks .zip files (Windows server, macOS client) into a folder:
           # pack each folder again as <name>.zip with the same top-level folder as the original.
           for d in dist/*/; do
             [ -d "$d" ] || continue
@@ -64,7 +65,7 @@ jobs:
           done
           ls -la dist
           if find dist -mindepth 1 -type d | grep -q .; then echo "unexpected folders in dist" >&2; exit 1; fi
-          version=$(node -p "require('./package.json').version")
+          version=$(scripts/bump-version.sh)
           short=${GITHUB_SHA::7}
           tag="v${version}-pre.${GITHUB_RUN_NUMBER}"
           prev=$(git tag --list 'v*-pre.*' --sort=-creatordate | head -n1)
@@ -84,12 +85,12 @@ jobs:
             for f in dist/*; do
               n=$(basename "$f")
               case "$n" in
-                Nostalgia-*-setup.exe) what="Client, Windows installer" ;;
-                Nostalgia-*-portable.exe) what="Client, Windows portable" ;;
-                Nostalgia-*.AppImage) what="Client, SteamOS / Linux (AppImage)" ;;
-                Nostalgia-*.tar.gz) what="Client, Linux (tar.gz)" ;;
-                nostalgia-server-*-windows-*.zip) what="Server, Windows (Node.js included)" ;;
-                nostalgia-server-*-linux-*.tar.gz) what="Server, Linux (Node.js included)" ;;
+                Nostalgia-*-windows-*.exe) what="Client, Windows" ;;
+                Nostalgia-*-linux-*.tar.gz) what="Client, SteamOS / Linux" ;;
+                Nostalgia-*-macos-*.zip) what="Client, macOS Apple Silicon (not notarized)" ;;
+                nostalgia-server-*-windows-*.zip) what="Server, Windows" ;;
+                nostalgia-server-*-linux-*.tar.gz) what="Server, Linux" ;;
+                nostalgia-server-*-macos-*.tar.gz) what="Server, macOS Apple Silicon" ;;
                 *) what="" ;;
               esac
               echo "| \`$n\` | $what |"

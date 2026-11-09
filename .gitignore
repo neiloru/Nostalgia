@@ -1,6 +1,6 @@
-node_modules/
+# Rust build output
+target/
 dist/
-out/
 release/
 # test data & local secrets
 Resources/
@@ -15,3 +15,6 @@ server/data/
 server/database/
 server/saves/
 server/library/
+# left over from the Node.js / Electron version
+node_modules/
+out/

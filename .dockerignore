@@ -1,23 +1,15 @@
-# Only what server/Dockerfile needs: root package files, shared/, server/ and client/package.json
-# (the lock file covers all workspaces). Keeps game files, builds and secrets out of the image.
-**/node_modules
-**/dist
-**/out
-**/release
-.git
-.github
-Resources
-devlib
-devdata
-docs
-examples
-client/*
-!client/package.json
-server/data
-server/database
-server/saves
-server/library
-server/test
-**/settings.yaml
-igdb.txt
-*.log
+# Only what server/Dockerfile needs: the Cargo workspace (shared/, server/, client/ sources) and
+# LICENSE. Keeps game files, builds, local data and secrets out of the image.
+*
+!Cargo.toml
+!Cargo.lock
+!LICENSE
+!shared/Cargo.toml
+!shared/src
+!server/Cargo.toml
+!server/src
+!server/admin
+!server/settings.example.yaml
+!client/Cargo.toml
+!client/src
+!client/assets

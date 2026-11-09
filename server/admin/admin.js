@@ -137,6 +137,7 @@
           <div class="card grid">
             <h2>Server</h2>
             <div class="kv small-text">
+              <div>Version</div><div>${esc(o.version)}</div>
               <div>Settings file</div><div class="mono">${esc(o.settingsFile)}</div>
               <div>Library</div><div class="mono">${esc(o.libraryPath)}</div>
               <div>Database</div><div class="mono">${esc(o.databasePath)}</div>

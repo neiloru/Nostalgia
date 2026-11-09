@@ -16,78 +16,101 @@ on:
       platform:
         description: Platforms to build
         type: choice
-        options: [all, windows, linux]
+        options: [all, windows, linux, macos]
         default: all
       skip-tests:
-        description: Skip typecheck and tests
+        description: Skip the tests
         type: boolean
         default: false
 
 permissions:
   contents: read
 
+env:
+  CARGO_TERM_COLOR: always
+  # GPUI (Wayland / X11 / Vulkan, fonts) and gilrs (udev).
+  LINUX_DEPS: >-
+    libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libx11-xcb-dev
+    libxcb1-dev libfontconfig-dev libfreetype-dev libudev-dev pkg-config
+
 jobs:
   test:
-    name: Typecheck and tests
+    name: Tests
     if: ${{ !inputs.skip-tests }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
+          key: client-test
+      - run: cargo test --locked -p nostalgia
 
   windows:
-    name: Windows (installer + portable)
+    name: Windows x64 (exe)
     needs: test
     # Runs after the tests, or right away when they were skipped.
     if: ${{ !failure() && !cancelled() && (inputs.platform == 'all' || inputs.platform == 'windows') }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: npm run dist:win -w client
+          key: client
+      - run: scripts/package.sh client
+        shell: bash
       # Uploaded unzipped (archive: false): each file is its own downloadable artifact.
       - uses: actions/upload-artifact@v7
         with:
           if-no-files-found: error
           archive: false
-          path: client/release/*-setup.exe
-      - uses: actions/upload-artifact@v7
-        with:
-          if-no-files-found: error
-          archive: false
-          path: client/release/*-portable.exe
+          path: release/*.exe
 
   linux:
-    name: SteamOS / Linux (AppImage + tar.gz)
+    name: SteamOS / Linux x64 (tar.gz)
     needs: test
     if: ${{ !failure() && !cancelled() && (inputs.platform == 'all' || inputs.platform == 'linux') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: npm run dist:linux -w client
-      # Unzipped uploads keep the executable bit of the AppImage.
+          key: client
+      - run: scripts/package.sh client
+      - run: tar -xzOf release/Nostalgia-*.tar.gz --wildcards '*/nostalgia' > /tmp/nostalgia && chmod +x /tmp/nostalgia && /tmp/nostalgia --version
+      # Unzipped upload keeps the tar.gz (and the executable bit inside) as-is.
       - uses: actions/upload-artifact@v7
         with:
           if-no-files-found: error
           archive: false
-          path: client/release/*.AppImage
+          path: release/*.tar.gz
+
+  macos:
+    name: macOS arm64 (app)
+    needs: test
+    if: ${{ !failure() && !cancelled() && (inputs.platform == 'all' || inputs.platform == 'macos') }}
+    runs-on: macos-latest # Apple Silicon
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: client
+      - run: scripts/package.sh client
+      - name: Check the app bundle
+        run: |
+          set -e
+          mkdir -p /tmp/app && ditto -x -k release/Nostalgia-*.zip /tmp/app
+          app=$(ls -d /tmp/app/*/Nostalgia.app)
+          codesign --verify --deep "$app"
+          plutil -lint "$app/Contents/Info.plist"
+          "$app/Contents/MacOS/nostalgia" --version
       - uses: actions/upload-artifact@v7
         with:
           if-no-files-found: error
           archive: false
-          path: client/release/*.tar.gz
+          path: release/*.zip
