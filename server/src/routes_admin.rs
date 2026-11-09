@@ -456,5 +456,10 @@ fn asset(name: &str) -> Response {
         "favicon.svg" => (FAVICON, "image/svg+xml"),
         _ => return HttpError::not_found("Not found").into_response(),
     };
+    // Working on the admin UI: NOSTALGIA_ADMIN_DIR=server/admin serves the files from disk,
+    // so changes show up on reload without rebuilding the server.
+    let body: Vec<u8> = std::env::var_os("NOSTALGIA_ADMIN_DIR")
+        .and_then(|dir| std::fs::read(std::path::Path::new(&dir).join(name)).ok())
+        .unwrap_or_else(|| body.to_vec());
     ([(header::CONTENT_TYPE, ct), (header::CACHE_CONTROL, "public, max-age=0")], body).into_response()
 }

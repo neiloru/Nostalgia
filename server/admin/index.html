@@ -9,31 +9,30 @@
 </head>
 <body>
   <div id="login" class="login hidden">
-    <form id="loginForm" class="card login-card">
-      <div class="brand big"><span class="logo">N</span> Nostalgia</div>
-      <p class="muted">Server administration</p>
+    <form id="loginForm" class="login-card">
+      <div>
+        <h1>Nostalgia</h1>
+        <p class="muted">Server administration</p>
+      </div>
       <label>Username <input name="username" autocomplete="username" required /></label>
       <label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
-      <button class="primary" type="submit">Sign in</button>
+      <button class="primary big" type="submit">Sign in</button>
       <p class="error" id="loginError"></p>
     </form>
   </div>
 
   <div id="app" class="hidden">
-    <aside class="sidebar">
-      <div class="brand"><span class="logo">N</span> Nostalgia</div>
-      <nav id="nav">
+    <header class="topbar">
+      <nav id="nav" class="tabs">
         <a href="#dashboard" data-page="dashboard">Dashboard</a>
         <a href="#games" data-page="games">Games</a>
         <a href="#import" data-page="import">Import <span class="badge" id="unsortedBadge"></span></a>
         <a href="#emulators" data-page="emulators">Emulators</a>
         <a href="#users" data-page="users">Users</a>
       </nav>
-      <div class="sidebar-foot">
-        <div id="jobIndicator" class="job-indicator"></div>
-        <button id="logout" class="ghost">Sign out</button>
-      </div>
-    </aside>
+      <div id="jobIndicator" class="job-indicator"></div>
+      <button id="logout" class="ghost">Sign out</button>
+    </header>
     <main id="main"></main>
   </div>
 

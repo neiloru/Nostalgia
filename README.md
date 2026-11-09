@@ -20,6 +20,8 @@ Both are written in Rust and ship as single native executables.
 | [![Store page with IGDB artwork, description and facts](docs/screenshots/store.png)](docs/screenshots/store.png) | [![Library with play time, cloud saves and per-game settings](docs/screenshots/library.png)](docs/screenshots/library.png) |
 | **Downloads** (resumable, pausable) | **Admin UI**: games |
 | [![Downloads with paused and finished items](docs/screenshots/downloads.png)](docs/screenshots/downloads.png) | [![Admin games list](docs/screenshots/admin-games.png)](docs/screenshots/admin-games.png) |
+| **Admin UI**: dashboard | **Admin UI**: emu.yaml editor |
+| [![Admin dashboard with library, saves and server status](docs/screenshots/admin-dashboard.png)](docs/screenshots/admin-dashboard.png) | [![Editing an emulator's emu.yaml with Windows, Linux and macOS sections](docs/screenshots/admin-emu-yaml.png)](docs/screenshots/admin-emu-yaml.png) |
 
 ```
 ┌───────────────────────────── server (Rust) ───────────────────────────────┐
@@ -310,6 +312,9 @@ cargo test --workspace
 cargo build --release                 # target/release/nostalgia-server, target/release/nostalgia
 scripts/package.sh server             # release package for this OS -> release/
 ```
+
+The admin UI (`server/admin`) is built into the server binary. While working on it, start the server
+with `NOSTALGIA_ADMIN_DIR=server/admin` to serve the files from disk, so changes show up on reload.
 
 ### Version
 

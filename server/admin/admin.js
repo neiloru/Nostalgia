@@ -100,7 +100,7 @@
         const pct = j.hashing.bytesTotal ? Math.round((j.hashing.bytesDone / j.hashing.bytesTotal) * 100) : 0;
         parts.push(`Hashing ${esc(j.hashing.current || '')} ${pct}%`);
       }
-      $('#jobIndicator').innerHTML = parts.join('<br>');
+      $('#jobIndicator').innerHTML = parts.map((p) => `<span>${p}</span>`).join('');
       const badge = j.scan.last?.unsorted?.length || '';
       $('#unsortedBadge').textContent = badge;
       return j;
@@ -327,7 +327,7 @@
         <tbody>${emus.length ? emus.map((e) => `<tr data-id="${e.id}">
           <td>${esc(e.name)} ${e.missing ? '<span class="pill err">missing</span>' : ''}<div class="muted small-text mono">${esc(e.relPath)}</div></td>
           <td><span class="pill">${esc(e.platform)}</span></td>
-          <td>${e.supports.map((s) => `<span class="pill ok">${s}</span>`).join(' ') || '-'}</td>
+          <td>${e.supports.map((s) => `<span class="pill">${s}</span>`).join(' ') || '-'}</td>
           <td>${fmtBytes(e.sizeBytes)}<div class="muted small-text">${e.fileCount} files</div></td>
           <td>${e.configError ? `<span class="pill err" title="${esc(e.configError)}">${esc(e.configError)}</span>` : '<span class="pill ok">valid</span>'}</td>
           <td>${e.inLibraries}</td>
