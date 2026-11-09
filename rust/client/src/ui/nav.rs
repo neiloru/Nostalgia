@@ -484,7 +484,7 @@ mod tests {
         n
     }
 
-    #[test]
+    #[core::prelude::v1::test]
     fn stays_in_row_and_does_not_jump_diagonally() {
         // Two cards in a grid region, a filter column to the left, the tab bar above.
         let mut n = nav_with(&[
