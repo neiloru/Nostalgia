@@ -12,7 +12,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-current=$(sed -n '/^\[workspace.package\]/,/^\[/{s/^version = "\(.*\)"/\1/p}' Cargo.toml)
+# awk instead of a sed block: BSD sed (macOS) rejects `{s/.../p}` without a `;`.
+current=$(awk '/^\[workspace\.package\]/ { inside = 1; next } /^\[/ { inside = 0 } inside && /^version = "/ { sub(/^version = "/, ""); sub(/".*$/, ""); print; exit }' Cargo.toml)
 if [ -z "$current" ]; then
   echo "No [workspace.package] version found in Cargo.toml" >&2
   exit 1
