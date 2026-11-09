@@ -1,6 +1,7 @@
 //! Top bar, running game banner, hint bar, toasts and dialogs (port of App.tsx and ui.tsx).
 
 use super::nav::InputMode;
+use super::theme::surface;
 use super::theme::*;
 use super::widgets::*;
 use super::{AppView, FocusTarget, Modal, TABS, Tab};

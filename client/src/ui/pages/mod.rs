@@ -8,6 +8,7 @@ mod store;
 mod vault;
 
 use super::nav::NavRc;
+use super::theme::surface;
 use super::theme::*;
 use super::widgets::*;
 use super::{AppView, Modal};

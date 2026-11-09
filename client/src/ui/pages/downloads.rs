@@ -3,6 +3,7 @@
 use super::AnyItem;
 use crate::model::{DownloadJob, DownloadStatus};
 use crate::ui::AppView;
+use crate::ui::theme::surface;
 use crate::ui::theme::*;
 use crate::ui::widgets::*;
 use crate::util::{fmt_bytes, fmt_date};
