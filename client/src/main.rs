@@ -2,6 +2,7 @@
 //! client, so either can be used with the same installs, settings and cloud saves.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod app_icon;
 mod client;
 mod downloads;
 mod launcher;

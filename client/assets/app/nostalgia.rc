@@ -1,0 +1,30 @@
+// Windows resources of nostalgia.exe (compiled by build.rs). The icon has ID 1: GPUI loads
+// resource 1 as the window class icon (title bar, taskbar, Alt+Tab), Explorer shows the first icon.
+#include <winver.h>
+
+1 ICON "icon.ico"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, 0
+PRODUCTVERSION  VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, 0
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_APP
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName",      "Nostalgia"
+      VALUE "FileDescription",  "Nostalgia"
+      VALUE "FileVersion",      VERSION_STRING
+      VALUE "InternalName",     "nostalgia"
+      VALUE "OriginalFilename", "nostalgia.exe"
+      VALUE "ProductName",      "Nostalgia"
+      VALUE "ProductVersion",   VERSION_STRING
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END

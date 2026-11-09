@@ -25,7 +25,19 @@ tokio = { workspace = true, features = ["full"] }
 uuid = { workspace = true, features = ["v4"] }
 zip = { version = "9.4.2", default-features = false, features = ["deflate"] }
 
+[build-dependencies]
+# Windows: the app icon and version info in nostalgia.exe (build.rs).
+embed-resource = "3.0.12"
+
 # macOS: compile the Metal shaders when the app starts instead of with `xcrun metal` at build time
 # (newer Xcode versions ship without the Metal compiler unless it is downloaded separately).
 [target.'cfg(target_os = "macos")'.dependencies]
 gpui-pre-macos = { version = "0.3.11", features = ["runtime_shaders"] }
+# Dock icon when started outside Nostalgia.app (src/app_icon.rs).
+objc2 = "0.6.5"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSImage", "NSResponder"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSData"] }
+
+# Linux: the X11 window icon (src/app_icon.rs).
+[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
+image = { version = "0.25.10", default-features = false, features = ["png"] }
