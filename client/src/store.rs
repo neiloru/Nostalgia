@@ -49,6 +49,16 @@ impl<T: Serialize + DeserializeOwned + Default> JsonStore<T> {
             self.save_now();
         }
     }
+
+    /// Like `flush`, but writes `f(value)`: the value in memory stays complete.
+    pub fn flush_as<U: Serialize>(&mut self, f: impl FnOnce(&T) -> U) {
+        if self.dirty {
+            self.dirty = false;
+            if let Err(e) = write_atomic(&self.file, &f(&self.value)) {
+                eprintln!("Could not write {}: {e}", self.file.display());
+            }
+        }
+    }
 }
 
 pub fn write_atomic<T: Serialize>(file: &Path, value: &T) -> std::io::Result<()> {

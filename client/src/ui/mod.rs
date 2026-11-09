@@ -831,6 +831,10 @@ impl Dir {
 
 impl Render for AppView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Catalog images dropped from the in-memory cache: free their GPU textures.
+        for image in self.client.take_evicted_media() {
+            cx.drop_image(image, Some(window));
+        }
         self.nav.borrow_mut().begin_frame();
         let body = if !self.state.ready {
             div().size_full().bg(theme::bg()).into_any_element()

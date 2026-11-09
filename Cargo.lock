@@ -4058,6 +4058,7 @@ dependencies = [
  "gpui-kit",
  "gpui-pre-macos",
  "hex",
+ "image",
  "nostalgia-shared",
  "percent-encoding",
  "regex",

@@ -5,6 +5,7 @@
 mod client;
 mod downloads;
 mod launcher;
+mod media_cache;
 mod model;
 mod savesync;
 mod store;
