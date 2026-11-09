@@ -87,10 +87,11 @@ pub fn pct(j: &DownloadJob) -> u32 {
 
 impl AppView {
     /// Cover image (or a placeholder with the name) of a game / emulator, filling its parent.
-    pub fn cover(&mut self, item: &AnyItem, small: bool) -> AnyElement {
+    /// `radius` rounds the image itself: GPUI clips children of a rounded parent to a rectangle.
+    pub fn cover(&mut self, item: &AnyItem, small: bool, radius: f32) -> AnyElement {
         match item {
             AnyItem::Emu(e) => {
-                let mut d = div().size_full().flex().flex_col().items_center().justify_center().gap(r(10.)).p(r(14.)).bg(surface2()).child(icon("chip", 42., muted()));
+                let mut d = div().size_full().rounded(r(radius)).flex().flex_col().items_center().justify_center().gap(r(10.)).p(r(14.)).bg(surface2()).child(icon("chip", 42., muted()));
                 if !small {
                     d = d
                         .child(div().text_size(r(16.)).font_weight(FontWeight::SEMIBOLD).text_color(text()).text_center().child(e.name.clone()))
@@ -102,9 +103,9 @@ impl AppView {
                 if g.has_cover
                     && let Some(p) = self.client.media(g.id, "cover.jpg")
                 {
-                    return img(p).size_full().object_fit(ObjectFit::Cover).into_any_element();
+                    return img(p).size_full().rounded(r(radius)).object_fit(ObjectFit::Cover).into_any_element();
                 }
-                let mut d = div().size_full().flex().flex_col().justify_end().gap(r(4.)).p(r(14.)).bg(surface3()).text_size(r(15.));
+                let mut d = div().size_full().rounded(r(radius)).flex().flex_col().justify_end().gap(r(4.)).p(r(14.)).bg(surface3()).text_size(r(15.));
                 if !small {
                     d = d.child(div().font_weight(FontWeight::BOLD).child(g.name.clone())).child(div().text_size(r(12.)).text_color(muted()).child(g.platform_name.clone()));
                 }
@@ -140,7 +141,7 @@ impl AppView {
             .rounded(r(RADIUS))
             .overflow_hidden()
             .bg(surface2())
-            .child(self.cover(item, false))
+            .child(self.cover(item, false, RADIUS))
             .child(badges);
         if let Some(j) = st.job {
             cover = cover.child(

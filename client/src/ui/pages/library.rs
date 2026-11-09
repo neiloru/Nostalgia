@@ -92,7 +92,7 @@ impl AppView {
                     .flex()
                     .items_center()
                     .gap(r(10.))
-                    .min_h(r(42.))
+                    .min_h(r(34.))
                     .px(r(12.))
                     .rounded(r(RADIUS))
                     .text_color(if active || st.installed || focused { text() } else { muted() })
@@ -187,7 +187,7 @@ impl AppView {
     }
 
     fn detail_hero(&mut self, item: &AnyItem, image: Option<std::path::PathBuf>, meta: Div) -> Div {
-        let cover = self.cover(item, true);
+        let cover = self.cover(item, true, RADIUS);
         let mut hero = div().relative().flex().items_end().h(r(300.)).bg(surface()).overflow_hidden();
         if let Some(p) = image {
             hero = hero.child(img(p).absolute().inset_0().size_full().object_fit(ObjectFit::Cover));

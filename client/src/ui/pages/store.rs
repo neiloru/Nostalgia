@@ -62,7 +62,7 @@ impl AppView {
         // ---- hero
         let hero_img = hero_name(detail.as_ref()).and_then(|n| self.client.media(id, &n));
         let back = self.back_button(cx);
-        let cover = self.cover(&AnyItem::Game(g.clone()), false);
+        let cover = self.cover(&AnyItem::Game(g.clone()), false, RADIUS);
         let mut meta = div().flex().flex_wrap().items_center().gap(r(12.)).text_size(r(14.5)).text_color(text2()).child(div().font_weight(FontWeight::SEMIBOLD).child(g.platform_name.clone()));
         let dot = || div().text_color(faint()).child("·");
         if let Some(d) = m.as_ref().and_then(|m| m.release_date.clone()) {
@@ -114,7 +114,7 @@ impl AppView {
             for (i, s) in shots.iter().enumerate() {
                 let sid: SharedString = format!("shot:{i}").into();
                 let image = match self.client.media(id, s) {
-                    Some(p) => img(p).size_full().object_fit(ObjectFit::Cover).into_any_element(),
+                    Some(p) => img(p).size_full().rounded(r(RADIUS)).object_fit(ObjectFit::Cover).into_any_element(),
                     None => div().size_full().into_any_element(),
                 };
                 let tile = div().id(sid.clone()).w(r(shot_w)).h(r(shot_w * 9. / 16.)).rounded(r(RADIUS)).overflow_hidden().bg(surface2()).child(image);
@@ -237,7 +237,7 @@ impl AppView {
         let narrow = width < 1100.;
 
         let back = self.back_button(cx);
-        let cover = self.cover(&AnyItem::Emu(e.clone()), false);
+        let cover = self.cover(&AnyItem::Emu(e.clone()), false, RADIUS);
         let supports = e.supports.iter().map(|o| o.as_str()).collect::<Vec<_>>().join(" · ");
         let mut info = div()
             .flex()

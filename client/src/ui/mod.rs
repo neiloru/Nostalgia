@@ -51,22 +51,87 @@ pub enum Modal {
     InstallTo { kind: ItemKind, id: i64 },
     Lightbox { game_id: i64, shots: Vec<String>, index: usize },
     SaveVersions { emulator_id: i64, versions: Option<Vec<SaveVersion>> },
+    /// Vault filter with several values: options toggle and the dialog stays open. `values[0]`
+    /// is "" (all), the rest are the values of `Filters::list(key)`.
+    MultiSelect { title: String, key: &'static str, values: Vec<String>, labels: Vec<String> },
 }
 
-/// Vault filters (persisted like the Electron client's localStorage).
+/// Vault filters (persisted like the Electron client's localStorage). Each list filter matches any
+/// of its values; an empty list is "all".
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Filters {
-    pub platform: String,
-    pub genre: String,
-    pub theme: String,
-    pub mode: String,
-    pub developer: String,
-    pub decade: String,
+    #[serde(deserialize_with = "one_or_many")]
+    pub platform: Vec<String>,
+    #[serde(deserialize_with = "one_or_many")]
+    pub genre: Vec<String>,
+    #[serde(deserialize_with = "one_or_many")]
+    pub theme: Vec<String>,
+    #[serde(deserialize_with = "one_or_many")]
+    pub mode: Vec<String>,
+    #[serde(deserialize_with = "one_or_many")]
+    pub developer: Vec<String>,
+    #[serde(deserialize_with = "one_or_many")]
+    pub decade: Vec<String>,
     pub sort: String,
     pub show_emulators: bool,
     pub installed_only: bool,
     pub library_only: bool,
+}
+
+impl Filters {
+    pub const LISTS: [&'static str; 6] = ["platform", "genre", "theme", "mode", "decade", "developer"];
+
+    pub fn list(&self, key: &str) -> &Vec<String> {
+        match key {
+            "platform" => &self.platform,
+            "genre" => &self.genre,
+            "theme" => &self.theme,
+            "mode" => &self.mode,
+            "decade" => &self.decade,
+            _ => &self.developer,
+        }
+    }
+
+    pub fn list_mut(&mut self, key: &str) -> &mut Vec<String> {
+        match key {
+            "platform" => &mut self.platform,
+            "genre" => &mut self.genre,
+            "theme" => &mut self.theme,
+            "mode" => &mut self.mode,
+            "decade" => &mut self.decade,
+            _ => &mut self.developer,
+        }
+    }
+
+    /// Adds or removes a value; "" clears the filter.
+    pub fn toggle(&mut self, key: &str, value: &str) {
+        let list = self.list_mut(key);
+        if value.is_empty() {
+            list.clear();
+        } else if let Some(i) = list.iter().position(|v| v == value) {
+            list.remove(i);
+        } else {
+            list.push(value.to_string());
+        }
+    }
+}
+
+/// Filters saved by older versions hold one value as a string ("" = all).
+fn one_or_many<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(String),
+        Many(Vec<String>),
+        Null(()),
+    }
+    Ok(match OneOrMany::deserialize(d)? {
+        OneOrMany::One(s) if s.is_empty() => Vec::new(),
+        OneOrMany::One(s) => vec![s],
+        OneOrMany::Many(v) => v.into_iter().filter(|s| !s.is_empty()).collect(),
+        OneOrMany::Null(()) => Vec::new(),
+    })
 }
 
 /// Small per-device UI preferences (ui.json next to the client data).
@@ -130,6 +195,8 @@ pub struct AppView {
     // scroll areas
     pub scrolls: HashMap<&'static str, ScrollHandle>,
     pending_focus: Option<FocusTarget>,
+    /// Controller family last used (button prompts).
+    pub pad_kind: gamepad::PadKind,
     /// Frames a pending focus has waited for its target to appear.
     pending_focus_tries: u8,
     _subs: Vec<Subscription>,
@@ -222,8 +289,8 @@ impl AppView {
         let pad_rx = gamepad::start();
         cx.spawn_in(window, async move |this, cx| {
             let mut rx = pad_rx;
-            while let Some(cmd) = rx.next().await {
-                if this.update_in(cx, |this, window, cx| this.on_pad(cmd, window, cx)).is_err() {
+            while let Some((cmd, kind)) = rx.next().await {
+                if this.update_in(cx, |this, window, cx| this.on_pad(cmd, kind, window, cx)).is_err() {
                     break;
                 }
             }
@@ -261,6 +328,7 @@ impl AppView {
             details_loading: HashSet::new(),
             scrolls: HashMap::new(),
             pending_focus: None,
+            pad_kind: gamepad::PadKind::default_for_system(),
             pending_focus_tries: 0,
             _subs: subs,
         };
@@ -668,12 +736,16 @@ impl AppView {
         }
     }
 
-    fn on_pad(&mut self, cmd: gamepad::PadCommand, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_pad(&mut self, cmd: gamepad::PadCommand, kind: gamepad::PadKind, window: &mut Window, cx: &mut Context<Self>) {
         // Ignore input while another window (the emulator) has the focus.
         if !window.is_window_active() {
             return;
         }
         self.set_mode(InputMode::Gamepad, cx);
+        if self.pad_kind != kind {
+            self.pad_kind = kind;
+            cx.notify();
+        }
         use gamepad::PadCommand as P;
         match cmd {
             P::Move(d) => {
@@ -814,4 +886,25 @@ pub fn run(client: Arc<Client>, ui_rx: futures_channel::mpsc::UnboundedReceiver<
         cx.on_window_closed(|cx, _| cx.quit()).detach();
     });
     client_end.flush();
+}
+
+#[cfg(test)]
+mod filter_tests {
+    use super::Filters;
+
+    #[test]
+    fn filters_read_old_single_values_and_toggle() {
+        let f: Filters = serde_json::from_str(r#"{"platform":"psx","genre":"","theme":["Fantasy","Drama"],"sort":"year"}"#).unwrap();
+        assert_eq!(f.platform, vec!["psx"]);
+        assert!(f.genre.is_empty());
+        assert_eq!(f.theme, vec!["Fantasy", "Drama"]);
+        assert_eq!(f.sort, "year");
+        let mut f = f;
+        f.toggle("platform", "ps2");
+        f.toggle("theme", "Fantasy");
+        assert_eq!(f.platform, vec!["psx", "ps2"]);
+        assert_eq!(f.theme, vec!["Drama"]);
+        f.toggle("platform", "");
+        assert!(f.platform.is_empty());
+    }
 }

@@ -18,12 +18,51 @@ pub enum PadCommand {
     Start,
 }
 
+/// Controller family, for the button prompts (buttons are read by position: South is "A" on Xbox,
+/// cross on PlayStation and "B" on Nintendo controllers).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PadKind {
+    Xbox,
+    PlayStation,
+    Switch,
+    SteamDeck,
+}
+
+impl PadKind {
+    /// Before any controller input: the Steam Deck inside Steam, else Xbox (the common layout).
+    pub fn default_for_system() -> PadKind {
+        if std::env::var("SteamDeck").as_deref() == Ok("1") { PadKind::SteamDeck } else { PadKind::Xbox }
+    }
+
+    fn detect(vendor: Option<u16>, product: Option<u16>, name: &str) -> PadKind {
+        let name = name.to_lowercase();
+        let has = |w: &[&str]| w.iter().any(|x| name.contains(x));
+        match vendor {
+            Some(0x054c) => return PadKind::PlayStation,
+            Some(0x057e) => return PadKind::Switch,
+            // Valve: the Steam Deck's own controls, or Steam's virtual pad on a Steam Deck.
+            Some(0x28de) if product == Some(0x1205) || Self::default_for_system() == PadKind::SteamDeck => return PadKind::SteamDeck,
+            _ => {}
+        }
+        if has(&["dualsense", "dualshock", "playstation", "ps3", "ps4", "ps5"]) {
+            PadKind::PlayStation
+        } else if has(&["nintendo", "switch", "joy-con", "joycon", "pro controller"]) {
+            PadKind::Switch
+        } else if has(&["steam deck"]) {
+            PadKind::SteamDeck
+        } else {
+            Self::default_for_system()
+        }
+    }
+}
+
 const REPEAT_DELAY: Duration = Duration::from_millis(380);
 const REPEAT_RATE: Duration = Duration::from_millis(110);
 const STICK_PRESS: f32 = 0.6;
 const STICK_RELEASE: f32 = 0.35;
 
-pub fn start() -> futures_channel::mpsc::UnboundedReceiver<PadCommand> {
+/// Commands with the family of the controller that sent them.
+pub fn start() -> futures_channel::mpsc::UnboundedReceiver<(PadCommand, PadKind)> {
     let (tx, rx) = futures_channel::mpsc::unbounded();
     std::thread::Builder::new()
         .name("gamepad".into())
@@ -31,6 +70,7 @@ pub fn start() -> futures_channel::mpsc::UnboundedReceiver<PadCommand> {
             let Ok(mut gilrs) = gilrs::Gilrs::new() else { return };
             let mut pressed: HashMap<&'static str, (Instant, bool)> = HashMap::new();
             let mut stick: HashMap<gilrs::GamepadId, Dir> = HashMap::new();
+            let mut kind = PadKind::default_for_system();
             loop {
                 while gilrs.next_event().is_some() {}
                 let now = Instant::now();
@@ -79,6 +119,7 @@ pub fn start() -> futures_channel::mpsc::UnboundedReceiver<PadCommand> {
                         };
                         d
                     };
+                    let mut used = d.is_some();
                     if let Some(d) = d
                         && (dir.is_none() || pressed.contains_key(dir_name(d)))
                     {
@@ -95,7 +136,12 @@ pub fn start() -> futures_channel::mpsc::UnboundedReceiver<PadCommand> {
                     ] {
                         if b(button) {
                             active.push(name);
+                            used = true;
                         }
+                    }
+                    // The prompts follow the controller that is in use.
+                    if used {
+                        kind = PadKind::detect(pad.vendor_id(), pad.product_id(), pad.name());
                     }
                 }
                 if let Some(d) = dir {
@@ -120,7 +166,7 @@ pub fn start() -> futures_channel::mpsc::UnboundedReceiver<PadCommand> {
                         }
                         Some(_) => false,
                     };
-                    if fire && let Some(cmd) = command(name) && tx.unbounded_send(cmd).is_err() {
+                    if fire && let Some(cmd) = command(name) && tx.unbounded_send((cmd, kind)).is_err() {
                         return;
                     }
                 }
@@ -156,4 +202,21 @@ fn command(name: &str) -> Option<PadCommand> {
         "start" => PadCommand::Start,
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PadKind;
+
+    #[test]
+    fn detects_the_controller_family() {
+        assert_eq!(PadKind::detect(Some(0x054c), Some(0x0ce6), "DualSense Wireless Controller"), PadKind::PlayStation);
+        assert_eq!(PadKind::detect(None, None, "PS4 Controller"), PadKind::PlayStation);
+        assert_eq!(PadKind::detect(Some(0x057e), Some(0x2009), "Pro Controller"), PadKind::Switch);
+        assert_eq!(PadKind::detect(Some(0x28de), Some(0x1205), "Steam Deck"), PadKind::SteamDeck);
+        if std::env::var("SteamDeck").is_err() {
+            assert_eq!(PadKind::detect(Some(0x045e), Some(0x0b12), "Xbox Series X Controller"), PadKind::Xbox);
+            assert_eq!(PadKind::detect(Some(0x28de), Some(0x11ff), "Steam Virtual Gamepad"), PadKind::Xbox);
+        }
+    }
 }

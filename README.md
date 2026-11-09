@@ -232,7 +232,8 @@ put the emulator's `.app` into the emulator folder on the server.
 ### Features
 
 * **Vault**: every game on the server, with filters for platform, genre, theme, game mode, era
-  and developer/publisher, plus sorting. "Show emulators" (off by default), "Installed only" and
+  and developer/publisher (each can hold several values, e.g. PlayStation and PlayStation 2),
+  plus sorting. "Show emulators" (off by default), "Installed only" and
   "In my library only" checkboxes. Every game has a store page with artwork, description, story,
   screenshots and facts from IGDB.
 * **Library**: your games (and optionally emulators). Play / install / uninstall, play time,
@@ -283,6 +284,11 @@ Ctrl 0 returns to automatic.
 | search / filter | Y | F or `/` |
 | settings | Start | |
 | fullscreen | | F11 |
+
+The hint bar at the bottom shows the buttons of the controller in use: Xbox, PlayStation,
+Nintendo (Switch) or Steam Deck, detected from the controller that was used last. With keyboard
+and mouse it shows the keys. Buttons are read by position, so "select" is the bottom face button
+on every controller (B on Nintendo controllers).
 
 ### Client data
 
@@ -356,5 +362,6 @@ nostalgia-server → *Package settings*) so `docker pull` works without logging 
 ## License
 
 [MIT](LICENSE). Game metadata and artwork come from [IGDB](https://www.igdb.com) and are subject
-to their terms; hash lookups use [Hasheous](https://hasheous.org). No games, BIOS files or
-emulators are included in this repository.
+to their terms; hash lookups use [Hasheous](https://hasheous.org). Controller and keyboard
+prompts are [Input Prompts by Kenney](https://kenney.nl/assets/input-prompts) (CC0). No games,
+BIOS files or emulators are included in this repository.

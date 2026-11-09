@@ -15,6 +15,68 @@ pub fn icon(name: &str, size: f32, color: Hsla) -> Svg {
     svg().path(super::assets::icon_path(name)).size(r(size)).flex_none().text_color(color)
 }
 
+/// An action shown in the hint bar, drawn as the button of the controller in use (Kenney Input
+/// Prompts) or as the keyboard key.
+#[derive(Clone, Copy, PartialEq)]
+pub enum PadPrompt {
+    Confirm,
+    Back,
+    Search,
+    TabLeft,
+    TabRight,
+    Menu,
+    Move,
+}
+
+/// PadPrompt icon for a controller family, or for the keyboard (`None`). Buttons are positional:
+/// Confirm is the bottom face button, Back the right one, Search the top one.
+pub fn prompt_name(pad: Option<super::gamepad::PadKind>, p: PadPrompt) -> Option<&'static str> {
+    use super::gamepad::PadKind as K;
+    use PadPrompt as P;
+    Some(match (pad, p) {
+        (None, P::Confirm) => "keyboard_enter",
+        (None, P::Back) => "keyboard_escape",
+        (None, P::Search) => "keyboard_f",
+        (None, P::TabLeft) => "keyboard_q",
+        (None, P::TabRight) => "keyboard_e",
+        (None, P::Move) => "keyboard_arrows",
+        (None, P::Menu) => return None,
+        (Some(K::Xbox), P::Confirm) => "xbox_button_a",
+        (Some(K::Xbox), P::Back) => "xbox_button_b",
+        (Some(K::Xbox), P::Search) => "xbox_button_y",
+        (Some(K::Xbox), P::TabLeft) => "xbox_lb",
+        (Some(K::Xbox), P::TabRight) => "xbox_rb",
+        (Some(K::Xbox), P::Menu) => "xbox_button_menu",
+        (Some(K::Xbox), P::Move) => "xbox_dpad",
+        (Some(K::PlayStation), P::Confirm) => "playstation_button_cross",
+        (Some(K::PlayStation), P::Back) => "playstation_button_circle",
+        (Some(K::PlayStation), P::Search) => "playstation_button_triangle",
+        (Some(K::PlayStation), P::TabLeft) => "playstation_trigger_l1",
+        (Some(K::PlayStation), P::TabRight) => "playstation_trigger_r1",
+        (Some(K::PlayStation), P::Menu) => "playstation5_button_options",
+        (Some(K::PlayStation), P::Move) => "playstation_dpad",
+        // Nintendo labels: the bottom button is B, the right one A, the top one X.
+        (Some(K::Switch), P::Confirm) => "switch_button_b",
+        (Some(K::Switch), P::Back) => "switch_button_a",
+        (Some(K::Switch), P::Search) => "switch_button_x",
+        (Some(K::Switch), P::TabLeft) => "switch_button_l",
+        (Some(K::Switch), P::TabRight) => "switch_button_r",
+        (Some(K::Switch), P::Menu) => "switch_button_plus",
+        (Some(K::Switch), P::Move) => "switch_dpad",
+        (Some(K::SteamDeck), P::Confirm) => "steamdeck_button_a",
+        (Some(K::SteamDeck), P::Back) => "steamdeck_button_b",
+        (Some(K::SteamDeck), P::Search) => "steamdeck_button_y",
+        (Some(K::SteamDeck), P::TabLeft) => "steamdeck_button_l1",
+        (Some(K::SteamDeck), P::TabRight) => "steamdeck_button_r1",
+        (Some(K::SteamDeck), P::Menu) => "steamdeck_button_options",
+        (Some(K::SteamDeck), P::Move) => "steamdeck_dpad",
+    })
+}
+
+pub fn prompt(pad: Option<super::gamepad::PadKind>, p: PadPrompt, size: f32, color: Hsla) -> Option<Svg> {
+    prompt_name(pad, p).map(|n| svg().path(super::assets::prompt_path(n)).size(r(size)).flex_none().text_color(color))
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum Ring {
     /// Ring around the element (buttons, inputs), like `outline-offset: 3px`.
@@ -380,23 +442,6 @@ pub fn progress(value: u64, total: u64, paused: bool) -> Div {
         .bg(surface3())
         .overflow_hidden()
         .child(div().h_full().w(relative(pct)).rounded_full().bg(if paused { faint() } else { info() }))
-}
-
-pub fn kbd(label: &str) -> Div {
-    div()
-        .flex()
-        .items_center()
-        .justify_center()
-        .min_w(r(24.))
-        .h(r(24.))
-        .px(r(6.))
-        .rounded_full()
-        .border(r(1.5))
-        .border_color(faint())
-        .text_color(text())
-        .text_size(r(11.))
-        .font_weight(FontWeight::SEMIBOLD)
-        .child(label.to_string())
 }
 
 pub fn h1(t: impl Into<SharedString>) -> Div {

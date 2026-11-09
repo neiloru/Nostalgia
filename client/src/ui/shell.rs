@@ -66,10 +66,11 @@ impl AppView {
         let state = self.state.clone();
         let user = state.session.as_ref().map(|(_, u)| u.username.clone()).unwrap_or_default();
         group(&nav, "bar", false, || {
-            let pad_hint = |l: &str| kbd(l).mr(r(6.)).ml(r(6.));
+            let pad_kind = self.pad_kind;
+            let pad_hint = |p: PadPrompt| div().mx(r(4.)).flex().items_center().children(prompt(Some(pad_kind), p, 34., muted()));
             let mut tabs = div().flex().items_center().gap(r(4.)).flex_1();
             if gamepad {
-                tabs = tabs.child(pad_hint("LB"));
+                tabs = tabs.child(pad_hint(PadPrompt::TabLeft));
             }
             for (t, label) in TABS {
                 let id: SharedString = format!("tab:{label}").into();
@@ -103,7 +104,7 @@ impl AppView {
                 tabs = tabs.child(focusable_ext(el, &nav, id, Ring::Outer(RADIUS), Some(act), is_active, false, cx));
             }
             if gamepad {
-                tabs = tabs.child(pad_hint("RB"));
+                tabs = tabs.child(pad_hint(PadPrompt::TabRight));
             }
             let mut right = div().flex().items_center().gap(r(12.));
             if !state.online {
@@ -157,11 +158,14 @@ impl AppView {
     }
 
     fn render_hintbar(&self) -> Div {
-        let mouse = self.nav.borrow().mode == InputMode::Mouse;
-        let hint = |k: Vec<&str>, label: &str| {
+        let mode = self.nav.borrow().mode;
+        let mouse = mode == InputMode::Mouse;
+        // Buttons of the controller in use, or the keyboard keys.
+        let pad = (mode == InputMode::Gamepad).then_some(self.pad_kind);
+        let hint = |k: Vec<PadPrompt>, label: &str| {
             let mut d = div().flex().items_center().gap(r(6.));
-            for key in k {
-                d = d.child(kbd(key));
+            for p in k {
+                d = d.children(prompt(pad, p, 32., text()));
             }
             d.child(label.to_string())
         };
@@ -178,12 +182,17 @@ impl AppView {
             .border_color(line())
             .bg(bg())
             .opacity(if mouse { 0.5 } else { 1.0 })
-            .child(hint(vec!["A"], "Select"))
-            .child(hint(vec!["B"], "Back"));
+            .child(hint(vec![PadPrompt::Move], "Move"))
+            .child(hint(vec![PadPrompt::Confirm], "Select"))
+            .child(hint(vec![PadPrompt::Back], "Back"));
         if (self.tab == Tab::Vault && self.store_sel.is_none()) || self.tab == Tab::Library {
-            bar = bar.child(hint(vec!["Y"], "Search"));
+            bar = bar.child(hint(vec![PadPrompt::Search], "Search"));
         }
-        bar = bar.child(hint(vec!["LB", "RB"], "Switch tabs")).child(div().flex_1());
+        bar = bar.child(hint(vec![PadPrompt::TabLeft, PadPrompt::TabRight], "Switch tabs"));
+        if pad.is_some() && self.state.session.is_some() {
+            bar = bar.child(hint(vec![PadPrompt::Menu], "Settings"));
+        }
+        bar = bar.child(div().flex_1());
         let pending = self.state.pending_sessions;
         if pending > 0 {
             bar = bar.child(format!("{pending} play session{} waiting to sync", if pending > 1 { "s" } else { "" }));
@@ -308,6 +317,64 @@ impl AppView {
                     list = list.child(focusable_ext(row, &nav, id, Ring::Inset(RADIUS), Some(act), false, sel, cx));
                 }
                 (Some(title), false, scroll_end(&nav, "modal-list", &handle, list).max_h(r(560.)).into_any_element())
+            }
+            Modal::MultiSelect { title, key, values, labels } => {
+                // Several values: choosing an option toggles it and the dialog stays open; the
+                // vault behind it updates right away. The first option ("All ...") clears the filter.
+                let (title, key) = (title.clone(), *key);
+                let chosen = self.prefs.vault_filters.list(key).clone();
+                let first_checked = values.iter().position(|v| if v.is_empty() { chosen.is_empty() } else { chosen.contains(v) }).unwrap_or(0);
+                let handle = list_handle;
+                scroll_begin(&nav, "modal-list", &handle);
+                let mut list = div().flex().flex_col().gap(r(2.));
+                for (i, (value, label)) in values.iter().zip(labels.iter()).enumerate() {
+                    let id: SharedString = format!("opt:{idx}:{i}").into();
+                    let focused = nav.borrow().ring(&id);
+                    let on = if value.is_empty() { chosen.is_empty() } else { chosen.contains(value) };
+                    let check = div()
+                        .size(r(20.))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(r(5.))
+                        .when(on, |d| d.bg(play()))
+                        .when(!on, |d| d.border(r(1.5)).border_color(faint()))
+                        .when(on, |d| d.child(icon("check", 14., play_ink())));
+                    let row = div()
+                        .id(id.clone())
+                        .flex()
+                        .items_center()
+                        .gap(r(12.))
+                        .min_h(r(46.))
+                        .px(r(14.))
+                        .py(r(8.))
+                        .rounded(r(RADIUS))
+                        .when(focused, |d| d.bg(surface3()))
+                        .hover(|s| s.bg(surface2()))
+                        .child(check)
+                        .child(div().flex_1().child(label.clone()));
+                    let v = value.clone();
+                    let act = action(move |this, _, cx| {
+                        this.prefs.vault_filters.toggle(key, &v);
+                        this.save_prefs();
+                        cx.notify();
+                    });
+                    list = list.child(focusable_ext(row, &nav, id, Ring::Inset(RADIUS), Some(act), false, i == first_checked, cx));
+                }
+                let list = scroll_end(&nav, "modal-list", &handle, list).max_h(r(520.));
+                let count = chosen.len();
+                let foot = div()
+                    .flex()
+                    .items_center()
+                    .gap(r(10.))
+                    .child(div().flex_1().text_size(r(13.)).text_color(muted()).child(match count {
+                        0 => "Nothing selected: all are shown".to_string(),
+                        1 => "1 selected".to_string(),
+                        n => format!("{n} selected"),
+                    }))
+                    .child(btn(format!("multi:{idx}:done"), "Done").primary().render(&nav, action(|this, window, cx| this.close_modal(window, cx)), cx));
+                (Some(title), false, div().flex().flex_col().gap(r(14.)).child(list).child(foot).into_any_element())
             }
             Modal::Confirm { title, message, confirm, danger, on_confirm } => {
                 let title = title.clone();

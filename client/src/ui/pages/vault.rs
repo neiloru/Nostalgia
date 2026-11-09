@@ -59,7 +59,7 @@ impl AppView {
             if !q.is_empty() && !it.name().to_lowercase().contains(&q) && !it.platform_name().to_lowercase().contains(&q) {
                 return false;
             }
-            if !f.platform.is_empty() && it.platform() != f.platform {
+            if !f.platform.is_empty() && !f.platform.iter().any(|p| p == it.platform()) {
                 return false;
             }
             if f.installed_only && state.installed(it.kind(), it.id()).is_none() {
@@ -68,13 +68,15 @@ impl AppView {
             if f.library_only && !state.in_library(it.kind(), it.id()) {
                 return false;
             }
+            // A filter with several values matches any of them.
+            let any = |list: &Vec<String>, hit: &dyn Fn(&String) -> bool| list.is_empty() || list.iter().any(hit);
             match it {
                 AnyItem::Game(g) => {
-                    (f.genre.is_empty() || g.genres.contains(&f.genre))
-                        && (f.theme.is_empty() || g.themes.contains(&f.theme))
-                        && (f.mode.is_empty() || g.game_modes.contains(&f.mode))
-                        && (f.developer.is_empty() || g.developers.contains(&f.developer) || g.publishers.contains(&f.developer))
-                        && (f.decade.is_empty() || decade(g.year) == f.decade)
+                    any(&f.genre, &|v| g.genres.contains(v))
+                        && any(&f.theme, &|v| g.themes.contains(v))
+                        && any(&f.mode, &|v| g.game_modes.contains(v))
+                        && any(&f.developer, &|v| g.developers.contains(v) || g.publishers.contains(v))
+                        && any(&f.decade, &|v| decade(g.year) == *v)
                 }
                 AnyItem::Emu(_) => f.genre.is_empty() && f.theme.is_empty() && f.mode.is_empty() && f.developer.is_empty() && f.decade.is_empty(),
             }
@@ -101,65 +103,71 @@ impl AppView {
         let filters_w = if width < 1100. { 230. } else { 280. };
 
         // ---- filter column
-        let active_filters = [&f.platform, &f.genre, &f.theme, &f.mode, &f.developer, &f.decade].iter().filter(|s| !s.is_empty()).count()
+        let active_filters = Filters::LISTS.iter().filter(|k| !f.list(k).is_empty()).count()
             + f.installed_only as usize
             + f.library_only as usize;
         let filter_handle = self.scroll("vault-filters");
-        let all = |l: &str| ("".to_string(), l.to_string());
-        let mk_opts = |first: (String, String), rest: Vec<(String, String)>| {
-            let mut v = vec![first];
-            v.extend(rest);
-            v
-        };
         let simple = |xs: &Vec<String>| xs.iter().map(|x| (x.clone(), x.clone())).collect::<Vec<_>>();
-        let selects: Vec<(&str, &str, Vec<(String, String)>, String)> = vec![
-            ("platform", "Platform", mk_opts(all("All platforms"), platforms), f.platform.clone()),
-            ("genre", "Genre", mk_opts(all("Any genre"), simple(&genres)), f.genre.clone()),
-            ("theme", "Theme", mk_opts(all("Any theme"), simple(&themes)), f.theme.clone()),
-            ("mode", "Game mode", mk_opts(all("Any mode"), simple(&modes)), f.mode.clone()),
-            ("decade", "Era", mk_opts(all("Any year"), simple(&decades)), f.decade.clone()),
-            ("developer", "Developer / publisher", mk_opts(all("Anyone"), simple(&devs)), f.developer.clone()),
-            (
-                "sort",
-                "Sort by",
-                vec![("name".into(), "Name".into()), ("year".into(), "Release year".into()), ("rating".into(), "Rating".into()), ("added".into(), "Recently added".into())],
-                if f.sort.is_empty() { "name".into() } else { f.sort.clone() },
-            ),
+        // (key, label, "all" label, (value, label) options): several values can be picked.
+        let lists: Vec<(&'static str, &str, &str, Vec<(String, String)>)> = vec![
+            ("platform", "Platform", "All platforms", platforms),
+            ("genre", "Genre", "Any genre", simple(&genres)),
+            ("theme", "Theme", "Any theme", simple(&themes)),
+            ("mode", "Game mode", "Any mode", simple(&modes)),
+            ("decade", "Era", "Any year", simple(&decades)),
+            ("developer", "Developer / publisher", "Anyone", simple(&devs)),
         ];
+        let sort_opts: Vec<(String, String)> =
+            vec![("name".into(), "Name".into()), ("year".into(), "Release year".into()), ("rating".into(), "Rating".into()), ("added".into(), "Recently added".into())];
+        let sort_value = if f.sort.is_empty() { "name".to_string() } else { f.sort.clone() };
         let filters_el = group(&nav, "filters", true, || {
             scroll_begin(&nav, "vault-filters", &filter_handle);
             let mut col = div().flex().flex_col().gap(r(8.)).px(r(16.)).py(r(24.)).child(text_input(&nav, "vault:search", &self.inputs.vault_search, true, cx));
-            for (key, label, opts, value) in selects {
-                let current = opts.iter().find(|(v, _)| *v == value).map(|(_, l)| l.clone()).unwrap_or_else(|| "–".into());
-                let selected = opts.iter().position(|(v, _)| *v == value).unwrap_or(0);
-                let values: Vec<String> = opts.iter().map(|(v, _)| v.clone()).collect();
-                let options: Vec<SelectOption> = opts.into_iter().map(|(_, l)| SelectOption { label: l, hint: None }).collect();
+            for (key, label, all_label, opts) in lists {
+                // "Any genre", "Action", "Action +2"
+                let chosen: Vec<String> =
+                    f.list(key).iter().map(|v| opts.iter().find(|(o, _)| o == v).map(|(_, l)| l.clone()).unwrap_or_else(|| v.clone())).collect();
+                let current = match chosen.len() {
+                    0 => all_label.to_string(),
+                    1 => chosen[0].clone(),
+                    n => format!("{} +{}", chosen[0], n - 1),
+                };
+                let mut values = vec![String::new()];
+                let mut labels = vec![all_label.to_string()];
+                for (v, l) in opts {
+                    values.push(v);
+                    labels.push(l);
+                }
                 let title = label.to_string();
-                let key2 = key.to_string();
-                let on_pick: PickFn = Rc::new(move |this: &mut AppView, i, _, cx| {
-                    let v = values[i].clone();
-                    let f = &mut this.prefs.vault_filters;
-                    match key2.as_str() {
-                        "platform" => f.platform = v,
-                        "genre" => f.genre = v,
-                        "theme" => f.theme = v,
-                        "mode" => f.mode = v,
-                        "decade" => f.decade = v,
-                        "developer" => f.developer = v,
-                        _ => f.sort = v,
-                    }
-                    this.save_prefs();
-                    cx.notify();
-                });
-                let options = Rc::new(options);
                 col = col.child(select(
                     format!("filter:{key}"),
                     label,
                     &current,
                     &nav,
                     action(move |this, window, cx| {
+                        this.open_modal(Modal::MultiSelect { title: title.clone(), key, values: values.clone(), labels: labels.clone() }, window, cx);
+                    }),
+                    cx,
+                ));
+            }
+            {
+                let current = sort_opts.iter().find(|(v, _)| *v == sort_value).map(|(_, l)| l.clone()).unwrap_or_else(|| "–".into());
+                let selected = sort_opts.iter().position(|(v, _)| *v == sort_value).unwrap_or(0);
+                let values: Vec<String> = sort_opts.iter().map(|(v, _)| v.clone()).collect();
+                let options: Rc<Vec<SelectOption>> = Rc::new(sort_opts.into_iter().map(|(_, l)| SelectOption { label: l, hint: None }).collect());
+                let on_pick: PickFn = Rc::new(move |this: &mut AppView, i, _, cx| {
+                    this.prefs.vault_filters.sort = values[i].clone();
+                    this.save_prefs();
+                    cx.notify();
+                });
+                col = col.child(select(
+                    "filter:sort",
+                    "Sort by",
+                    &current,
+                    &nav,
+                    action(move |this, window, cx| {
                         let opts: Vec<SelectOption> = options.iter().map(|o| SelectOption { label: o.label.clone(), hint: o.hint.clone() }).collect();
-                        this.open_modal(Modal::Select { title: title.clone(), options: opts, selected, on_pick: on_pick.clone() }, window, cx);
+                        this.open_modal(Modal::Select { title: "Sort by".into(), options: opts, selected, on_pick: on_pick.clone() }, window, cx);
                     }),
                     cx,
                 ));
