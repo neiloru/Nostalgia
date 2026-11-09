@@ -127,7 +127,6 @@ pub struct AppView {
     // data loaded on demand
     pub details: HashMap<i64, Option<GameDetail>>,
     pub details_loading: HashSet<i64>,
-    pub save_paths: HashMap<i64, Vec<String>>,
     // scroll areas
     pub scrolls: HashMap<&'static str, ScrollHandle>,
     pending_focus: Option<FocusTarget>,
@@ -258,7 +257,6 @@ impl AppView {
             locations: Vec::new(),
             details: HashMap::new(),
             details_loading: HashSet::new(),
-            save_paths: HashMap::new(),
             scrolls: HashMap::new(),
             pending_focus: None,
             _subs: subs,

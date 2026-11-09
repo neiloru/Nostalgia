@@ -37,10 +37,6 @@ impl<T: Serialize + DeserializeOwned + Default> JsonStore<T> {
         r
     }
 
-    pub fn is_dirty(&self) -> bool {
-        self.dirty
-    }
-
     pub fn save_now(&mut self) {
         self.dirty = false;
         if let Err(e) = write_atomic(&self.file, &self.value) {

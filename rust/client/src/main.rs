@@ -33,6 +33,18 @@ fn main() {
     }
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().worker_threads(4).thread_name("nostalgia-io").build().expect("tokio runtime");
     let paths = client::Paths::detect();
+    // One instance per data folder (two would overwrite each other's files), like the Electron client.
+    let _ = std::fs::create_dir_all(&paths.user_data);
+    let _instance = match std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(paths.user_data.join("instance.lock")) {
+        Ok(f) => match f.try_lock() {
+            Ok(()) => Some(f),
+            Err(_) => {
+                eprintln!("Nostalgia is already running ({})", paths.user_data.display());
+                return;
+            }
+        },
+        Err(_) => None,
+    };
     let (ui_tx, ui_rx) = futures_channel::mpsc::unbounded();
     let client = client::Client::new(runtime.handle().clone(), paths, ui_tx);
     let fullscreen = args.iter().any(|a| a == "--fullscreen") || (!args.iter().any(|a| a == "--windowed") && client.settings().start_fullscreen);

@@ -3,10 +3,10 @@
 
 use crate::model::*;
 use crate::store::JsonStore;
-use crate::util::{iso_now, now_ms};
+use crate::util::iso_now;
 use futures_util::StreamExt;
 use nostalgia_shared::{
-    AuthResponse, EmulatorSummary, GameDetail, GameMetadata, GameSummary, ItemKind, LibraryState, OsKey, PlaytimeEntry, SaveVersion, ServerEvent,
+    AuthResponse, EmulatorSummary, GameDetail, GameSummary, ItemKind, LibraryState, OsKey, PlaytimeEntry, SaveVersion, ServerEvent,
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -162,7 +162,6 @@ pub struct Client {
     pub version: String,
     pub os: OsKey,
     pub device: String,
-    pub device_id: String,
     pub(crate) http: reqwest::Client,
     pub(crate) inner: Mutex<Inner>,
     ui_tx: Mutex<Option<futures_channel::mpsc::UnboundedSender<UiEvent>>>,
@@ -227,7 +226,6 @@ impl Client {
             version: env!("CARGO_PKG_VERSION").to_string(),
             os,
             device,
-            device_id: device_store.data().id.clone().unwrap_or_default(),
             http,
             inner: Mutex::new(inner),
             ui_tx: Mutex::new(Some(ui_tx)),
@@ -245,14 +243,6 @@ impl Client {
 
     pub(crate) fn lock(&self) -> MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
-    pub fn spawn<F>(self: &Arc<Self>, fut: F) -> tokio::task::JoinHandle<F::Output>
-    where
-        F: std::future::Future + Send + 'static,
-        F::Output: Send + 'static,
-    {
-        self.rt.spawn(fut)
     }
 
     fn push_event(&self, ev: UiEvent) {
@@ -1009,10 +999,6 @@ impl Client {
         });
         None
     }
-
-    pub fn now_ms(&self) -> i64 {
-        now_ms()
-    }
 }
 
 fn root_cause(e: &reqwest::Error) -> String {
@@ -1021,9 +1007,4 @@ fn root_cause(e: &reqwest::Error) -> String {
         s = src;
     }
     s.to_string()
-}
-
-/// Metadata from a detail (typed), for the UI.
-pub fn detail_metadata(d: &GameDetail) -> Option<GameMetadata> {
-    d.metadata_typed()
 }

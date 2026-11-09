@@ -113,7 +113,7 @@ impl AppView {
                 .child(h2("Download locations"))
                 .child(div().text_size(r(13.)).text_color(muted()).child("Games are installed to <location>/games/<platform>/ and emulators to <location>/emulators/<platform>/."))
                 .child(list)
-                .child(div().flex().child(btn("loc:add", "Add location").icon("plus").render(&nav, action(move |this, _, cx| {
+                .child(div().flex().child(btn("loc:add", "Add location").icon("plus").render(&nav, action(move |_, _, cx| {
                     let c = c.clone();
                     let paths = cx.prompt_for_paths(PathPromptOptions { files: false, directories: true, multiple: false, prompt: Some("Choose a download location".into()) });
                     cx.spawn(async move |this, cx| {
@@ -138,6 +138,8 @@ impl AppView {
                 action(move |_, _, _| c.update_settings(f))
             };
             let c = client.clone();
+            let autosync = toggle("set:autosync", "Sync cloud saves automatically", Some("Download newest saves on start, upload after playing".into()), s.auto_sync_saves, &nav, flip(|s| s.auto_sync_saves = !s.auto_sync_saves), cx);
+            nav.borrow_mut().set_autofocus("set:autosync");
             panel()
                 .child(h2("Cloud saves & play"))
                 .child(
@@ -146,7 +148,7 @@ impl AppView {
                         .flex_col()
                         .gap(r(2.))
                         .mb(r(12.))
-                        .child(toggle("set:autosync", "Sync cloud saves automatically", Some("Download newest saves on start, upload after playing".into()), s.auto_sync_saves, &nav, flip(|s| s.auto_sync_saves = !s.auto_sync_saves), cx))
+                        .child(autosync)
                         .child(toggle("set:emuwithgame", "Install the emulator together with a game", None, s.install_emulator_with_game, &nav, flip(|s| s.install_emulator_with_game = !s.install_emulator_with_game), cx))
                         .child(toggle("set:minimize", "Minimize Nostalgia while playing", None, s.minimize_on_launch, &nav, flip(|s| s.minimize_on_launch = !s.minimize_on_launch), cx)),
                 )

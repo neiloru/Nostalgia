@@ -197,6 +197,13 @@ impl Nav {
         });
     }
 
+    /// Make an already registered item the page's initial focus (`data-autofocus`).
+    pub fn set_autofocus(&mut self, id: &str) {
+        if let Some(it) = self.items.iter_mut().rev().find(|i| i.id.as_ref() == id) {
+            it.autofocus = true;
+        }
+    }
+
     pub fn is_focused(&self, id: &str) -> bool {
         self.focused.as_deref() == Some(id)
     }
@@ -419,11 +426,6 @@ impl Nav {
             self.last_rect = self.item_bounds(id);
         }
         self.focused = Some(id.into());
-    }
-
-    /// Group a region was entered with remembered state, e.g. to restore the card a store page was opened from.
-    pub fn remember(&mut self, group: &str, id: &str) {
-        self.last_focus.insert(group.to_string().into(), id.to_string().into());
     }
 }
 

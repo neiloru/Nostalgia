@@ -1,0 +1,66 @@
+name: Rust build
+
+# Rust server and client (rust/). Runs on pushes to the rust-rebuild branch and by hand;
+# not part of the main pre-release yet. Uploads the binaries as workflow artifacts.
+on:
+  push:
+    branches: [rust-rebuild]
+    paths: ['rust/**', 'server/admin/**', '.github/workflows/rust.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Tests (shared + server)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - run: cargo test -p nostalgia-shared -p nostalgia-server
+
+  build:
+    name: ${{ matrix.name }}
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Windows, os: windows-latest, exe: .exe, suffix: windows-x64 }
+          - { name: Linux, os: ubuntu-latest, exe: '', suffix: linux-x64 }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      # GPUI (Wayland / X11 / Vulkan, fonts) and gilrs (udev).
+      - if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libx11-xcb-dev \
+            libxcb1-dev libfontconfig-dev libfreetype-dev libudev-dev pkg-config
+      - run: cargo build --release -p nostalgia-server -p nostalgia
+      - name: Collect files
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/release/nostalgia-server${{ matrix.exe }} target/release/nostalgia${{ matrix.exe }} ../server/settings.example.yaml ../LICENSE dist/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nostalgia-rust-${{ matrix.suffix }}
+          path: rust/dist/
