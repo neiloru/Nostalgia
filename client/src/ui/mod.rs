@@ -526,6 +526,9 @@ impl AppView {
 
     pub fn set_mode(&mut self, m: InputMode, cx: &mut Context<Self>) {
         if self.nav.borrow().mode != m {
+            if std::env::var("NOSTALGIA_DEBUG").is_ok() {
+                eprintln!("[mode] {:?} -> {m:?}", self.nav.borrow().mode);
+            }
             self.nav.borrow_mut().mode = m;
             cx.notify();
         }
@@ -655,6 +658,10 @@ impl AppView {
         if std::env::var("NOSTALGIA_DEBUG").is_ok() {
             eprintln!("[key] {key:?} focused={:?}", self.nav.borrow().focused);
         }
+        // Any key takes over from the controller (prompts switch to the keyboard keys).
+        if self.nav.borrow().mode == InputMode::Gamepad {
+            self.set_mode(InputMode::Keyboard, cx);
+        }
         let m = &ks.modifiers;
         if (m.control || m.platform) && !m.alt {
             let dir = match key {
@@ -737,6 +744,9 @@ impl AppView {
     }
 
     fn on_pad(&mut self, cmd: gamepad::PadCommand, kind: gamepad::PadKind, window: &mut Window, cx: &mut Context<Self>) {
+        if std::env::var("NOSTALGIA_DEBUG").is_ok() {
+            eprintln!("[pad] {cmd:?} {kind:?} active={}", window.is_window_active());
+        }
         // Ignore input while another window (the emulator) has the focus.
         if !window.is_window_active() {
             return;
@@ -839,7 +849,6 @@ impl Render for AppView {
         } else {
             self.render_shell(window, cx).into_any_element()
         };
-        let mode = self.nav.borrow().mode;
         div()
             .id("root")
             .size_full()
@@ -848,8 +857,12 @@ impl Render for AppView {
             .font_family(theme::FONT)
             .track_focus(&self.focus_handle)
             .capture_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| this.on_key(ev, window, cx)))
-            .on_mouse_move(cx.listener(move |this, _: &MouseMoveEvent, _, cx| {
-                if mode != InputMode::Mouse {
+            .capture_any_mouse_down(cx.listener(|this, _: &MouseDownEvent, _, cx| this.set_mode(InputMode::Mouse, cx)))
+            // Moving the mouse only hides the keyboard focus ring: the controller stays in charge
+            // (prompts and focus) until a key or a mouse button is pressed, so a nudged mouse or a
+            // resting hand on a touchpad does not take it away.
+            .on_mouse_move(cx.listener(|this, _: &MouseMoveEvent, _, cx| {
+                if this.nav.borrow().mode == InputMode::Keyboard {
                     this.set_mode(InputMode::Mouse, cx);
                 }
             }))
@@ -867,12 +880,18 @@ pub fn run(client: Arc<Client>, ui_rx: futures_channel::mpsc::UnboundedReceiver<
         gpui_kit::init(cx);
         gpui_kit::component::theme::Theme::change(gpui_kit::component::theme::ThemeMode::Dark, None, cx);
         shell::style_components(cx);
+        #[cfg(target_os = "macos")]
+        crate::app_icon::set_dock_icon();
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        crate::app_icon::install_desktop_entry();
         let bounds = Bounds::centered(None, size(px(1440.), px(880.)), cx);
         let options = WindowOptions {
             window_bounds: Some(if fullscreen { WindowBounds::Fullscreen(bounds) } else { WindowBounds::Windowed(bounds) }),
             titlebar: Some(TitlebarOptions { title: Some("Nostalgia".into()), ..Default::default() }),
             window_min_size: Some(size(px(960.), px(600.))),
             app_id: Some("nostalgia".into()),
+            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+            icon: crate::app_icon::window_icon(),
             ..Default::default()
         };
         let client2 = client.clone();

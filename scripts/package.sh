@@ -121,7 +121,9 @@ EOF
     mkdir -p "$app/MacOS" "$app/Resources"
     cp target/release/nostalgia "$app/MacOS/nostalgia"
     cp LICENSE "$dir/"
-    if command -v iconutil > /dev/null; then
+    # The app icon (Finder, Dock, Cmd+Tab): an .app without it shows the generic icon.
+    command -v iconutil > /dev/null || { echo "iconutil not found (it ships with macOS)" >&2; exit 1; }
+    {
       set_dir="$tmp/icon.iconset"
       mkdir -p "$set_dir"
       icons=client/assets/app/icons
@@ -133,7 +135,7 @@ EOF
       cp "$icons/256x256.png" "$set_dir/icon_128x128@2x.png"
       cp "$icons/512x512.png" "$set_dir/icon_256x256@2x.png"
       iconutil -c icns "$set_dir" -o "$app/Resources/Nostalgia.icns"
-    fi
+    }
     cat > "$app/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
