@@ -5,7 +5,7 @@ members = ["shared", "server", "client"]
 [workspace.package]
 # The version of the server and the client (shown in the client's settings, the admin UI, /api/health,
 # `--version` and the release file names). Change it with scripts/bump-version.sh.
-version = "1.1.0"
+version = "1.1.1"
 edition = "2024"
 license = "MIT"
 
