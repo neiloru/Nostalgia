@@ -5,7 +5,7 @@
 use nostalgia_shared::{EmulatorSummary, GameSummary, ItemKind, LibraryState, OsKey, PlaytimeEntry, RemoteFile, SaveVersion, User};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -253,6 +253,23 @@ pub struct Cache {
     pub fetched_at: Option<String>,
 }
 
+impl Cache {
+    /// What is written to cache.json: the user's library and the installed items, for offline use.
+    /// The server's whole catalog (possibly thousands of games) is only kept in memory.
+    pub fn for_disk(&self, installed: &Installed) -> Cache {
+        let games: HashSet<i64> = self.library.games.iter().chain(installed.games.keys()).copied().collect();
+        let emulators: HashSet<i64> = self.library.emulators.iter().chain(installed.emulators.keys()).copied().collect();
+        Cache {
+            games: self.games.iter().filter(|g| games.contains(&g.id)).cloned().collect(),
+            emulators: self.emulators.iter().filter(|e| emulators.contains(&e.id)).cloned().collect(),
+            library: self.library.clone(),
+            playtime: self.playtime.clone(),
+            latest_saves: self.latest_saves.clone(),
+            fetched_at: self.fetched_at.clone(),
+        }
+    }
+}
+
 pub type CacheFile = BTreeMap<String, Cache>;
 
 #[derive(Debug, Clone)]
@@ -336,5 +353,34 @@ mod tests {
         assert_eq!(s.ui_scale, 1.25);
         let sync: SaveSyncFile = serde_json::from_str(r#"{ "2": { "1": { "versionId": 5, "fingerprint": "empty" } } }"#).unwrap();
         assert_eq!(sync["2"][&1].version_id, Some(5));
+    }
+
+    #[test]
+    fn only_library_and_installed_items_are_written_to_disk() {
+        let game = |id: i64| {
+            serde_json::json!({ "id": id, "kind": "game", "name": format!("G{id}"), "platform": "psx", "platformName": "PlayStation",
+                "folder": "f", "igdbId": 0, "sizeBytes": 0, "fileCount": 0, "hasCover": false, "hasArtwork": false, "addedAt": "" })
+        };
+        let emulator = |id: i64| {
+            serde_json::json!({ "id": id, "kind": "emulator", "name": format!("E{id}"), "platform": "psx", "platformName": "PlayStation",
+                "folder": "f", "sizeBytes": 0, "fileCount": 0, "config": null, "addedAt": "" })
+        };
+        let cache: Cache = serde_json::from_value(serde_json::json!({
+            "games": (1..=5).map(game).collect::<Vec<_>>(),
+            "emulators": (10..=12).map(emulator).collect::<Vec<_>>(),
+            "library": { "games": [1, 2], "emulators": [10] },
+            "fetchedAt": "2026-11-09T00:00:00.000Z"
+        }))
+        .unwrap();
+        let installed: Installed = serde_json::from_str(
+            r#"{ "games": { "4": { "kind": "game", "id": 4, "name": "G4", "platform": "psx", "folder": "f", "location": "/g", "path": "/g/f" } },
+                 "emulators": { "12": { "kind": "emulator", "id": 12, "name": "E12", "platform": "psx", "folder": "e", "location": "/g", "path": "/g/e" } } }"#,
+        )
+        .unwrap();
+        let disk = cache.for_disk(&installed);
+        assert_eq!(disk.games.iter().map(|g| g.id).collect::<Vec<_>>(), vec![1, 2, 4]);
+        assert_eq!(disk.emulators.iter().map(|e| e.id).collect::<Vec<_>>(), vec![10, 12]);
+        assert_eq!(disk.library.games, vec![1, 2]);
+        assert_eq!(disk.fetched_at, cache.fetched_at);
     }
 }

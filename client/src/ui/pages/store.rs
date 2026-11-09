@@ -201,7 +201,7 @@ impl AppView {
     }
 
     /// Hero header with background image, cover and info (store pages).
-    fn hero(&mut self, image: Option<std::path::PathBuf>, back: Stateful<Div>, cover: AnyElement, info: Div, narrow: bool, min_h: f32) -> Div {
+    fn hero(&mut self, image: Option<crate::client::Media>, back: Stateful<Div>, cover: AnyElement, info: Div, narrow: bool, min_h: f32) -> Div {
         let mut hero = div().relative().flex().items_end().min_h(r(min_h)).bg(surface()).overflow_hidden();
         if let Some(p) = image {
             hero = hero.child(img(p).absolute().inset_0().size_full().object_fit(ObjectFit::Cover));

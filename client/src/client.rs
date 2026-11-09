@@ -1,6 +1,7 @@
 //! Client core (port of core.ts / api.ts): session, server connection, offline cache, play time,
 //! save sync state. Runs on a tokio runtime; the UI is told about changes through `UiEvent`s.
 
+use crate::media_cache::{MediaCache, MediaKey};
 use crate::model::*;
 use crate::store::JsonStore;
 use crate::util::iso_now;
@@ -14,7 +15,23 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+/// Media of a game: a file of an installed game, or an image held in memory (catalog browsing).
+#[derive(Clone)]
+pub enum Media {
+    File(PathBuf),
+    Image(Arc<gpui_kit::RenderImage>),
+}
+
+impl From<Media> for gpui_kit::ImageSource {
+    fn from(m: Media) -> Self {
+        match m {
+            Media::File(p) => p.into(),
+            Media::Image(i) => i.into(),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum UiEvent {
@@ -87,11 +104,9 @@ impl Paths {
         };
         Paths { user_data, home, documents, app_data }
     }
-    pub fn media_cache_dir(&self) -> PathBuf {
-        self.user_data.join("media-cache")
-    }
-    pub fn detail_cache_dir(&self) -> PathBuf {
-        self.user_data.join("details")
+    /// Disk caches of earlier versions (catalog media and details of every game ever shown).
+    fn legacy_cache_dirs(&self) -> [PathBuf; 2] {
+        [self.user_data.join("media-cache"), self.user_data.join("details")]
     }
     pub fn save_backup_dir(&self) -> PathBuf {
         self.user_data.join("save-backups")
@@ -114,8 +129,9 @@ pub(crate) struct Inner {
     pub last_error: Option<String>,
     pub busy_saves: HashSet<i64>,
     pub ready: bool,
-    pub media_failed: HashSet<(i64, String)>,
-    pub media_loading: HashSet<(i64, String)>,
+    pub media_failed: HashSet<MediaKey>,
+    pub media_loading: HashSet<MediaKey>,
+    pub media: MediaCache<gpui_kit::RenderImage>,
 }
 
 impl Inner {
@@ -213,6 +229,7 @@ impl Client {
             ready: false,
             media_failed: HashSet::new(),
             media_loading: HashSet::new(),
+            media: MediaCache::new(crate::media_cache::LIMIT),
         };
         let device = format!("{hostname} ({})", os.as_str());
         let http = reqwest::Client::builder()
@@ -237,6 +254,12 @@ impl Client {
             save_retry_scheduled: AtomicBool::new(false),
         });
         client.verify_installed();
+        // Earlier versions cached media and details of every catalog game on disk.
+        for dir in client.paths.legacy_cache_dirs() {
+            if dir.exists() {
+                client.rt.spawn_blocking(move || std::fs::remove_dir_all(dir));
+            }
+        }
         client.rebuild_snapshot();
         client
     }
@@ -323,14 +346,16 @@ impl Client {
 
     /// Write changed JSON files (called periodically and on exit).
     pub fn flush(&self) {
-        let mut i = self.lock();
+        let mut guard = self.lock();
+        let i = &mut *guard;
         i.session.flush();
         i.settings.flush();
         i.installed.flush();
         i.game_settings.flush();
         i.save_sync.flush();
         i.pending.flush();
-        i.cache.flush();
+        let installed = i.installed.data();
+        i.cache.flush_as(|file| file.iter().map(|(key, c)| (key.clone(), c.for_disk(installed))).collect::<CacheFile>());
         i.downloads.flush();
     }
 
@@ -702,15 +727,10 @@ impl Client {
     }
 
     pub async fn game_detail(self: &Arc<Self>, id: i64) -> Option<GameDetail> {
-        let file = self.paths.detail_cache_dir().join(format!("{id}.json"));
+        // Not cached on disk: offline, installed games have their metadata in the install folder.
         if self.is_online()
             && let Ok(d) = self.get::<GameDetail>(&format!("/games/{id}")).await
         {
-            let _ = std::fs::create_dir_all(self.paths.detail_cache_dir());
-            let _ = std::fs::write(&file, serde_json::to_string(&d).unwrap_or_default());
-            return Some(d);
-        }
-        if let Some(d) = std::fs::read_to_string(&file).ok().and_then(|t| serde_json::from_str::<GameDetail>(&t).ok()) {
             return Some(d);
         }
         let (inst, summary) = {
@@ -947,44 +967,42 @@ impl Client {
     }
 
     // ------------------------------------------------------------------ media (covers, artwork)
-    /// Local file for `igdb/<name>` of a game: install folder, then the media cache. Missing files are
-    /// downloaded into the cache in the background (the UI re-renders when they arrive).
-    pub fn media(self: &Arc<Self>, game_id: i64, name: &str) -> Option<PathBuf> {
-        let key = (game_id, name.to_string());
-        let (inst, online, failed, loading) = {
+    /// `igdb/<name>` of a game: the file in the install folder, else the image from the in-memory
+    /// cache. Missing images are downloaded and decoded in the background (the UI re-renders when
+    /// they arrive).
+    pub fn media(self: &Arc<Self>, game_id: i64, name: &str) -> Option<Media> {
+        let (inst, server) = {
             let i = self.lock();
-            (i.installed(ItemKind::Game, game_id), i.online, i.media_failed.contains(&key), i.media_loading.contains(&key))
+            (i.installed(ItemKind::Game, game_id), i.session.data().session.as_ref().map(|s| s.server_url.clone()))
         };
         if let Some(inst) = inst {
             let p = Path::new(&inst.path).join("igdb").join(name);
             if p.exists() {
-                return Some(p);
+                return Some(Media::File(p));
             }
         }
-        let cached = self.paths.media_cache_dir().join(game_id.to_string()).join(name);
-        if cached.exists() {
-            return Some(cached);
+        let key: MediaKey = (server?, game_id, name.to_string());
+        {
+            let mut i = self.lock();
+            if let Some(image) = i.media.get(&key, Instant::now()) {
+                return Some(Media::Image(image));
+            }
+            if !i.online || i.media_failed.contains(&key) || !i.media_loading.insert(key.clone()) {
+                return None;
+            }
         }
-        if !online || failed || loading {
-            return None;
-        }
-        self.lock().media_loading.insert(key.clone());
         let me = self.clone();
-        let name = name.to_string();
         self.rt.spawn(async move {
             let ok: anyhow::Result<()> = async {
-                let path = format!("/games/{game_id}/media/{}", crate::util_url::encode(&name));
-                let url = me.api_url(&path, None)?;
+                let path = format!("/games/{game_id}/media/{}", crate::util_url::encode(&key.2));
+                let url = me.api_url(&path, Some(&key.0))?;
                 let res = me.send(&path, me.request(reqwest::Method::GET, &url).timeout(Duration::from_secs(30))).await?;
                 if !res.status().is_success() {
                     anyhow::bail!("HTTP {}", res.status());
                 }
                 let bytes = res.bytes().await?;
-                let dir = me.paths.media_cache_dir().join(game_id.to_string());
-                std::fs::create_dir_all(&dir)?;
-                let tmp = dir.join(format!("{name}.tmp"));
-                std::fs::write(&tmp, &bytes)?;
-                std::fs::rename(&tmp, dir.join(&name))?;
+                let (image, size) = tokio::task::spawn_blocking(move || decode_image(&bytes)).await??;
+                me.lock().media.insert(key.clone(), Arc::new(image), size, Instant::now());
                 Ok(())
             }
             .await;
@@ -999,6 +1017,21 @@ impl Client {
         });
         None
     }
+
+    /// Images dropped from the media cache, for the UI to release their GPU textures.
+    pub fn take_evicted_media(&self) -> Vec<Arc<gpui_kit::RenderImage>> {
+        self.lock().media.take_evicted()
+    }
+}
+
+/// Decodes an image for GPUI (BGRA), with its size in memory.
+fn decode_image(bytes: &[u8]) -> anyhow::Result<(gpui_kit::RenderImage, usize)> {
+    let mut data = image::load_from_memory(bytes)?.into_rgba8();
+    for pixel in data.chunks_exact_mut(4) {
+        pixel.swap(0, 2);
+    }
+    let size = data.as_raw().len();
+    Ok((gpui_kit::RenderImage::new(vec![image::Frame::new(data)]), size))
 }
 
 fn root_cause(e: &reqwest::Error) -> String {

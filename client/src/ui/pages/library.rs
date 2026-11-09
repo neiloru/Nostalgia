@@ -187,7 +187,7 @@ impl AppView {
         div().flex().size_full().child(list).child(detail)
     }
 
-    fn detail_hero(&mut self, item: &AnyItem, image: Option<std::path::PathBuf>, meta: Div) -> Div {
+    fn detail_hero(&mut self, item: &AnyItem, image: Option<crate::client::Media>, meta: Div) -> Div {
         let cover = self.cover(item, true, RADIUS);
         let mut hero = div().relative().flex().items_end().h(r(300.)).bg(surface()).overflow_hidden();
         if let Some(p) = image {
