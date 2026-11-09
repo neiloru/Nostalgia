@@ -113,6 +113,7 @@ impl Client {
         let home = self.paths.home.to_string_lossy().into_owned();
         let ctx = ExpandContext { vars: &vars, env: &env, home: &home, os: self.os };
         let exe = resolve(Path::new(&emu_inst.path), &expand_string(&sys.executable, &ctx));
+        let exe = if self.os == OsKey::Macos { app_bundle_binary(&exe) } else { exe };
         if !exe.exists() {
             return Err(ApiError::new(0, format!("Emulator executable not found: {}", exe.display())));
         }
@@ -207,5 +208,52 @@ impl Client {
         } else {
             let _ = std::process::Command::new("kill").args(["-TERM", &pid.to_string()]).spawn();
         }
+    }
+}
+
+/// macOS: `executable: PCSX2.app` starts the program inside the bundle
+/// (`PCSX2.app/Contents/MacOS/PCSX2`, or the only file in `Contents/MacOS`), so the client can wait
+/// for it and track the play time. Any other path is returned unchanged.
+fn app_bundle_binary(path: &Path) -> PathBuf {
+    let is_bundle = path.is_dir() && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("app"));
+    if !is_bundle {
+        return path.to_path_buf();
+    }
+    let dir = path.join("Contents").join("MacOS");
+    if let Some(stem) = path.file_stem() {
+        let named = dir.join(stem);
+        if named.is_file() {
+            return named;
+        }
+    }
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .map(|r| r.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.is_file()).collect())
+        .unwrap_or_default();
+    files.sort();
+    if files.len() == 1 { files.remove(0) } else { path.to_path_buf() }
+}
+
+#[cfg(test)]
+mod app_bundle_tests {
+    use super::app_bundle_binary;
+
+    #[test]
+    fn finds_the_program_inside_an_app_bundle() {
+        let root = std::env::temp_dir().join(format!("nostalgia-app-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        // Named after the bundle.
+        let a = root.join("PCSX2.app/Contents/MacOS");
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::write(a.join("PCSX2"), b"").unwrap();
+        std::fs::write(a.join("helper"), b"").unwrap();
+        assert_eq!(app_bundle_binary(&root.join("PCSX2.app")), a.join("PCSX2"));
+        // A single program with another name.
+        let b = root.join("Emu Beta.app/Contents/MacOS");
+        std::fs::create_dir_all(&b).unwrap();
+        std::fs::write(b.join("emu"), b"").unwrap();
+        assert_eq!(app_bundle_binary(&root.join("Emu Beta.app")), b.join("emu"));
+        // Not a bundle: unchanged.
+        assert_eq!(app_bundle_binary(&a.join("PCSX2")), a.join("PCSX2"));
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

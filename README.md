@@ -126,7 +126,7 @@ library/
     ps2/
       PCSX2/
         emu.yaml
-        pcsx2-qt.exe  pcsx2.AppImage  …
+        pcsx2-qt.exe  pcsx2.AppImage  PCSX2.app/  …
 ```
 
 * Platform folders use the [RomM folder names](https://docs.romm.app/latest/platforms/supported-platforms/)
@@ -163,10 +163,20 @@ systems:
     saves:
       - "~/.config/PCSX2/memcards"
     # optional: workingDirectory, env: { KEY: value }
+  macos:
+    executable: PCSX2.app                    # an .app bundle or a program file
+    arguments: ["-nogui", "-fullscreen", "{rom}"]
+    saves:
+      - "{appData}/PCSX2/memcards"           # ~/Library/Application Support/PCSX2/memcards
 ```
 
+`systems` needs at least one of `windows`, `linux` and `macos`; a client only offers emulators
+that have a section for its own OS. On macOS, `executable: Name.app` starts
+`Name.app/Contents/MacOS/Name` (or the only program in that folder).
+
 Placeholders: `{rom}` (selected file/disc), `{romDir}`, `{gameDir}`, `{emulatorDir}`, `{home}`,
-`{documents}`, `{appData}`, `{config}` (`$XDG_CONFIG_HOME`), `{dataHome}` (`$XDG_DATA_HOME`),
+`{documents}`, `{appData}` (`%APPDATA%`, `~/.config`, `~/Library/Application Support`),
+`{config}` (`$XDG_CONFIG_HOME`), `{dataHome}` (`$XDG_DATA_HOME`),
 plus environment variables (`%USERPROFILE%`, `$HOME`, `${VAR}`) and `~`.
 The old `saveFolder:` key (single folder) is accepted too. emu.yaml can be edited in the
 admin UI (the previous version is kept in `database/emu-yaml-history`).
@@ -205,9 +215,8 @@ for controllers. Prebuilt clients come from the *Client build* workflow, see [Bu
 | SteamOS / Linux | `Nostalgia-x.y.z-linux-x64.tar.gz`: `nostalgia` plus an icon and a `.desktop` file |
 | macOS (Apple Silicon) | `Nostalgia-x.y.z-macos-arm64.zip` with `Nostalgia.app`. It is not notarized: the first time, right-click → *Open* (or run `xattr -dr com.apple.quarantine Nostalgia.app`). |
 
-emu.yaml only has `windows` and `linux` sections, so on macOS the client uses the `linux`
-entries of the emulators: games can be browsed and downloaded, but launching needs emulators
-that run on macOS.
+On macOS the client uses the `macos` section of each emulator's emu.yaml (see [emu.yaml](#emuyaml));
+put the emulator's `.app` into the emulator folder on the server.
 
 ### Steam Deck / SteamOS
 

@@ -388,7 +388,7 @@ impl Client {
             installed_at: iso_now(),
             extra: Default::default(),
         };
-        if job.kind == ItemKind::Emulator && self.os == OsKey::Linux {
+        if job.kind == ItemKind::Emulator && self.os != OsKey::Windows {
             self.make_executable(&item);
         }
         let server = self.lock().session.data().session.as_ref().map(|s| s.server_url.clone());
@@ -421,11 +421,17 @@ impl Client {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let exe = self.emulator(item.id).and_then(|e| e.config).and_then(|c| c.systems.linux).map(|s| s.executable);
+            let exe = self.emulator(item.id).and_then(|e| e.config).and_then(|c| c.systems.get(self.os).map(|s| s.executable.clone()));
             let exe = exe.map(|e| e.trim_start_matches("./").to_string());
             for f in &item.files {
                 let lower = f.path.to_lowercase();
-                let hit = lower.ends_with(".appimage") || lower.ends_with(".sh") || lower.ends_with(".x86_64") || exe.as_deref() == Some(f.path.as_str());
+                // Downloads lose the executable bit: AppImages, scripts, the emu.yaml executable and
+                // everything in the Contents/MacOS folder of a macOS .app bundle.
+                let hit = lower.ends_with(".appimage")
+                    || lower.ends_with(".sh")
+                    || lower.ends_with(".x86_64")
+                    || lower.contains(".app/contents/macos/")
+                    || exe.as_deref() == Some(f.path.as_str());
                 if hit && let Ok(p) = safe_join(Path::new(&item.path), &f.path) {
                     let _ = std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o755));
                 }

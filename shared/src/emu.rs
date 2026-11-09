@@ -51,7 +51,7 @@ pub fn validate_emu_config(doc: &Value) -> Result<EmuConfig, String> {
     let systems = match get(d, "systems") {
         Some(Value::Mapping(m)) => m,
         Some(Value::Sequence(_)) => &serde_yaml::Mapping::new(),
-        _ => return Err("emu.yaml: \"systems\" with at least \"windows\" or \"linux\" is required".into()),
+        _ => return Err("emu.yaml: \"systems\" with at least \"windows\", \"linux\" or \"macos\" is required".into()),
     };
     let mut out = EmuConfig::default();
     if let Some(v) = get(d, "name") {
@@ -75,7 +75,7 @@ pub fn validate_emu_config(doc: &Value) -> Result<EmuConfig, String> {
         );
     }
     let mut sys_out = Systems::default();
-    for os in [OsKey::Windows, OsKey::Linux] {
+    for os in OsKey::ALL {
         let Some(s) = get(systems, os.as_str()) else { continue };
         let s = match s {
             Value::Mapping(m) => m,
@@ -128,13 +128,10 @@ pub fn validate_emu_config(doc: &Value) -> Result<EmuConfig, String> {
             }
             sys.env = Some(m);
         }
-        match os {
-            OsKey::Windows => sys_out.windows = Some(sys),
-            OsKey::Linux => sys_out.linux = Some(sys),
-        }
+        sys_out.set(os, sys);
     }
-    if sys_out.windows.is_none() && sys_out.linux.is_none() {
-        return Err("emu.yaml: define systems.windows and/or systems.linux".into());
+    if sys_out.keys().is_empty() {
+        return Err("emu.yaml: define systems.windows, systems.linux and/or systems.macos".into());
     }
     out.systems = sys_out;
     Ok(out)
@@ -349,5 +346,21 @@ mod tests {
         // JSON written by the Node.js server: systems first, then the rest.
         let c = parse_emu_yaml("name: TestEmu\nversion: 1.5\nsystems:\n  windows:\n    executable: emu.exe\n").unwrap();
         assert_eq!(serde_json::to_string(&c).unwrap(), r#"{"systems":{"windows":{"executable":"emu.exe"}},"name":"TestEmu","version":"1.5"}"#);
+    }
+
+    #[test]
+    fn validate_emu_config_accepts_macos() {
+        // macOS alone is enough, and the systems keep the order windows, linux, macos.
+        let c = parse_emu_yaml("systems:\n  macos:\n    executable: PCSX2.app\n    saves: '{appData}/PCSX2/memcards'\n").unwrap();
+        assert_eq!(c.systems.keys(), vec![OsKey::Macos]);
+        assert_eq!(c.systems.macos.as_ref().unwrap().saves, Some(vec!["{appData}/PCSX2/memcards".to_string()]));
+        let c = parse_emu_yaml("systems:\n  macos: {executable: a.app}\n  windows: {executable: a.exe}\n  linux: {executable: a.AppImage}\n").unwrap();
+        assert_eq!(c.systems.keys(), vec![OsKey::Windows, OsKey::Linux, OsKey::Macos]);
+        assert_eq!(
+            serde_json::to_string(&c.systems).unwrap(),
+            r#"{"windows":{"executable":"a.exe"},"linux":{"executable":"a.AppImage"},"macos":{"executable":"a.app"}}"#
+        );
+        assert!(parse_emu_yaml("systems:\n  macos: {}\n").is_err());
+        assert!(parse_emu_yaml("systems:\n  osx: {executable: a.app}\n").is_err());
     }
 }

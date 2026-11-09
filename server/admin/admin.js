@@ -519,6 +519,11 @@ systems:
     arguments: ["-fullscreen", "{rom}"]
     saves:
       - "~/.config/emulator/saves"
+  macos:
+    executable: Emulator.app
+    arguments: ["-fullscreen", "{rom}"]
+    saves:
+      - "{appData}/Emulator/saves"
 `;
   const EMU_HELP = `Placeholders:
   {rom}          absolute path of the selected game file / disc
@@ -527,13 +532,15 @@ systems:
   {emulatorDir}  installed emulator folder
   {home}         user home folder
   {documents}    the user's Documents folder (handles OneDrive redirection)
-  {appData}      %APPDATA% on Windows, ~/.config on Linux
+  {appData}      %APPDATA% on Windows, ~/.config on Linux, ~/Library/Application Support on macOS
   {config}       $XDG_CONFIG_HOME or ~/.config
   {dataHome}     $XDG_DATA_HOME or ~/.local/share
 Environment variables: %USERPROFILE%, %APPDATA%, $HOME, \${XDG_CONFIG_HOME}, ~
 arguments may be a list or a single string ("-nogui -fullscreen \\"{rom}\\"").
 saves: one or more folders - their content is uploaded as a versioned cloud save
        after the emulator closes (only if something changed).
+Systems: windows, linux and/or macos. On macOS the executable may be an .app bundle
+(Emulator.app starts Emulator.app/Contents/MacOS/Emulator).
 Optional per system: workingDirectory, env (map).`;
 
   async function go(page) {

@@ -188,18 +188,28 @@ pub struct EmulatorSystemConfig {
 pub enum OsKey {
     Windows,
     Linux,
+    Macos,
 }
 
 impl OsKey {
     pub fn current() -> OsKey {
-        if cfg!(windows) { OsKey::Windows } else { OsKey::Linux }
+        if cfg!(windows) {
+            OsKey::Windows
+        } else if cfg!(target_os = "macos") {
+            OsKey::Macos
+        } else {
+            OsKey::Linux
+        }
     }
     pub fn as_str(self) -> &'static str {
         match self {
             OsKey::Windows => "windows",
             OsKey::Linux => "linux",
+            OsKey::Macos => "macos",
         }
     }
+    /// Every system an emu.yaml can configure, in the order they are written and listed.
+    pub const ALL: [OsKey; 3] = [OsKey::Windows, OsKey::Linux, OsKey::Macos];
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -208,6 +218,8 @@ pub struct Systems {
     pub windows: Option<EmulatorSystemConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linux: Option<EmulatorSystemConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub macos: Option<EmulatorSystemConfig>,
 }
 
 impl Systems {
@@ -215,17 +227,18 @@ impl Systems {
         match os {
             OsKey::Windows => self.windows.as_ref(),
             OsKey::Linux => self.linux.as_ref(),
+            OsKey::Macos => self.macos.as_ref(),
+        }
+    }
+    pub fn set(&mut self, os: OsKey, sys: EmulatorSystemConfig) {
+        match os {
+            OsKey::Windows => self.windows = Some(sys),
+            OsKey::Linux => self.linux = Some(sys),
+            OsKey::Macos => self.macos = Some(sys),
         }
     }
     pub fn keys(&self) -> Vec<OsKey> {
-        let mut v = Vec::new();
-        if self.windows.is_some() {
-            v.push(OsKey::Windows);
-        }
-        if self.linux.is_some() {
-            v.push(OsKey::Linux);
-        }
-        v
+        OsKey::ALL.into_iter().filter(|os| self.get(*os).is_some()).collect()
     }
 }
 

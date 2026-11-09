@@ -17,3 +17,9 @@ systems:
     arguments: ["-nogui", "-fullscreen", "{rom}"]
     saves:
       - "~/.config/PCSX2/memcards"
+  macos:
+    # The PCSX2.app bundle from the macOS download, unpacked into the emulator folder.
+    executable: PCSX2.app
+    arguments: ["-nogui", "-fullscreen", "{rom}"]
+    saves:
+      - "{appData}/PCSX2/memcards"
