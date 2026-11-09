@@ -9,8 +9,9 @@
 > without putting your own security in front of it. Use at your own risk.
 
 Self-hosted retro game library: a **server** that holds your games, emulators, users and
-versioned cloud saves, and a **launcher client** (Windows + SteamOS/Linux) that looks and
-feels like a modern game store. It can be used with mouse, keyboard or a game controller.
+versioned cloud saves, and a **launcher client** (Windows, SteamOS/Linux and macOS) that looks
+and feels like a modern game store. It can be used with mouse, keyboard or a game controller.
+Both are written in Rust and ship as single native executables.
 
 ![Vault: every game on the server, with IGDB covers and filters](docs/screenshots/vault.png)
 
@@ -19,26 +20,30 @@ feels like a modern game store. It can be used with mouse, keyboard or a game co
 | [![Store page with IGDB artwork, description and facts](docs/screenshots/store.png)](docs/screenshots/store.png) | [![Library with play time, cloud saves and per-game settings](docs/screenshots/library.png)](docs/screenshots/library.png) |
 | **Downloads** (resumable, pausable) | **Admin UI**: games |
 | [![Downloads with paused and finished items](docs/screenshots/downloads.png)](docs/screenshots/downloads.png) | [![Admin games list](docs/screenshots/admin-games.png)](docs/screenshots/admin-games.png) |
+| **Admin UI**: dashboard | **Admin UI**: emu.yaml editor |
+| [![Admin dashboard with library, saves and server status](docs/screenshots/admin-dashboard.png)](docs/screenshots/admin-dashboard.png) | [![Editing an emulator's emu.yaml with Windows, Linux and macOS sections](docs/screenshots/admin-emu-yaml.png)](docs/screenshots/admin-emu-yaml.png) |
 
 ```
-┌──────────────────────────── server (Node.js) ─────────────────────────────┐
+┌───────────────────────────── server (Rust) ───────────────────────────────┐
 │ library/games/{platform}/{Name} [igdbid-ID]/…   IGDB metadata + artwork    │
 │ library/emulators/{platform}/{Emulator}/emu.yaml Hasheous hash check       │
 │ database/nostalgia.db (users, libraries, play time) Admin web UI /admin    │
 │ saves/{user}/{emulator}/vNNNNN-….zip  (versioned, never deleted)           │
 └──────────────┬────────────────────────────────────────────────────────────┘
                │ REST + Server-Sent-Events (push of new cloud saves)
-┌──────────────┴──────────── client (Electron) ─────────────────────────────┐
+┌──────────────┴────────────── client (Rust) ───────────────────────────────┐
 │ Vault · Library · Downloads · Settings   gamepad / keyboard / mouse        │
 │ resumable downloads · emulator launch · play time · save sync · offline    │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Why TypeScript / Node.js / Electron?** One language for server, client and the shared
-protocol types. Node runs anywhere and has SQLite built in, so the server needs no native
-modules. Electron ships one Chromium for both Windows and SteamOS, with a reliable Gamepad API
-for controller navigation, and packages as an `.exe` installer or as an AppImage. The AppImage
-runs on SteamOS's read-only system without installing anything.
+**Why Rust?** One language for server, client and the shared protocol types (the `shared`
+crate). The server is a single binary with SQLite and the admin UI built in, and the client is a
+native [GPUI](https://www.gpui.rs) app ([gpui-kit](https://crates.io/crates/gpui-kit)) with
+controller support through [gilrs](https://crates.io/crates/gilrs). Neither needs a runtime, and
+the client runs from SteamOS's home folder without installing anything. The Rust versions
+replaced the earlier Node.js server and Electron client and use the same settings, database,
+saves and client data, so an existing setup keeps working.
 
 ---
 
@@ -47,17 +52,15 @@ runs on SteamOS's read-only system without installing anything.
 ### Run
 
 **Prebuilt package** (from the *Server build* workflow, see [Builds](#builds)): unpack
-`nostalgia-server-x.y.z-windows-x64.zip` or `nostalgia-server-x.y.z-linux-x64.tar.gz` and run
-`start.cmd` / `./start.sh`. Node.js is included; nothing else needs to be installed.
+`nostalgia-server-x.y.z-windows-x64.zip`, `nostalgia-server-x.y.z-linux-x64.tar.gz` or
+`nostalgia-server-x.y.z-macos-arm64.tar.gz` and run `start.cmd` / `./start.sh`. Nothing else
+needs to be installed.
 
-**From source:**
+**From source** ([Rust](https://rustup.rs) stable):
 
 ```bash
-npm install
-npm run build -w server
-node server/dist/server.js --settings /path/to/settings.yaml
-# or during development
-npm run server:dev            # uses ./server/settings.yaml
+cargo run --release -p nostalgia-server -- --settings /path/to/settings.yaml
+cargo run -p nostalgia-server -- --settings server/settings.yaml   # during development
 ```
 
 When the settings file is missing, a template is written on first start. Then open
@@ -125,7 +128,7 @@ library/
     ps2/
       PCSX2/
         emu.yaml
-        pcsx2-qt.exe  pcsx2.AppImage  …
+        pcsx2-qt.exe  pcsx2.AppImage  PCSX2.app/  …
 ```
 
 * Platform folders use the [RomM folder names](https://docs.romm.app/latest/platforms/supported-platforms/)
@@ -162,10 +165,20 @@ systems:
     saves:
       - "~/.config/PCSX2/memcards"
     # optional: workingDirectory, env: { KEY: value }
+  macos:
+    executable: PCSX2.app                    # an .app bundle or a program file
+    arguments: ["-nogui", "-fullscreen", "{rom}"]
+    saves:
+      - "{appData}/PCSX2/memcards"           # ~/Library/Application Support/PCSX2/memcards
 ```
 
+`systems` needs at least one of `windows`, `linux` and `macos`; a client only offers emulators
+that have a section for its own OS. On macOS, `executable: Name.app` starts
+`Name.app/Contents/MacOS/Name` (or the only program in that folder).
+
 Placeholders: `{rom}` (selected file/disc), `{romDir}`, `{gameDir}`, `{emulatorDir}`, `{home}`,
-`{documents}`, `{appData}`, `{config}` (`$XDG_CONFIG_HOME`), `{dataHome}` (`$XDG_DATA_HOME`),
+`{documents}`, `{appData}` (`%APPDATA%`, `~/.config`, `~/Library/Application Support`),
+`{config}` (`$XDG_CONFIG_HOME`), `{dataHome}` (`$XDG_DATA_HOME`),
 plus environment variables (`%USERPROFILE%`, `$HOME`, `${VAR}`) and `~`.
 The old `saveFolder:` key (single folder) is accepted too. emu.yaml can be edited in the
 admin UI (the previous version is kept in `database/emu-yaml-history`).
@@ -190,34 +203,37 @@ admin UI (the previous version is kept in `database/emu-yaml-history`).
 ## Client
 
 ```bash
-npm install
-npm run client:dev                 # development (hot reload)
-npm run dist:win  -w client        # Windows installer + portable exe  -> client/release
-npm run dist:linux -w client       # AppImage + tar.gz (build on Linux)  -> client/release
-npm run icons -w client            # re-render build/icon.{png,ico} from build/icon.svg
+cargo run -p nostalgia                   # development; --fullscreen / --windowed
+scripts/package.sh client                # release package for this OS -> release/
 ```
 
-Prebuilt clients come from the *Client build* workflow, see [Builds](#builds).
+Linux needs the GPUI build dependencies (`libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev
+libvulkan-dev libx11-xcb-dev libxcb1-dev libfontconfig-dev libfreetype-dev`) and `libudev-dev`
+for controllers. Prebuilt clients come from the *Client build* workflow, see [Builds](#builds):
+
+| platform | file |
+| --- | --- |
+| Windows | `Nostalgia-x.y.z-windows-x64.exe`, a single executable, nothing to install |
+| SteamOS / Linux | `Nostalgia-x.y.z-linux-x64.tar.gz`: `nostalgia` plus an icon and a `.desktop` file |
+| macOS (Apple Silicon) | `Nostalgia-x.y.z-macos-arm64.zip` with `Nostalgia.app`. It is not notarized: the first time, right-click → *Open* (or run `xattr -dr com.apple.quarantine Nostalgia.app`). |
+
+On macOS the client uses the `macos` section of each emulator's emu.yaml (see [emu.yaml](#emuyaml));
+put the emulator's `.app` into the emulator folder on the server.
 
 ### Steam Deck / SteamOS
 
-1. Copy `Nostalgia-x.y.z-*.AppImage` to the Deck and make it executable.
-2. Desktop mode → Steam → *Add a Non-Steam Game* → select the AppImage.
+1. Unpack `Nostalgia-x.y.z-linux-x64.tar.gz` on the Deck, e.g. into `~/Applications`.
+2. Desktop mode → Steam → *Add a Non-Steam Game* → select `nostalgia`.
 3. Start it from Game Mode. Inside gamescope Nostalgia starts in fullscreen automatically
    (otherwise use `--fullscreen` or Settings → Display).
 4. Put Linux builds of the emulators (AppImages) in the emulator folders on the server and
    reference them in `systems.linux` of the emu.yaml.
 
-Started from Steam (or inside gamescope), the Linux launcher turns off Chromium's sandbox, keeps
-Steam's overlay library out of Electron (emulators still get it) and uses X11; otherwise Electron
-crashes on startup there. Its output is written to `~/.config/Nostalgia/logs/launch.log`
-(the run before: `launch.previous.log`). Set `NOSTALGIA_NO_SANDBOX=1` to turn the sandbox off
-outside Steam as well.
-
 ### Features
 
 * **Vault**: every game on the server, with filters for platform, genre, theme, game mode, era
-  and developer/publisher, plus sorting. "Show emulators" (off by default), "Installed only" and
+  and developer/publisher (each can hold several values, e.g. PlayStation and PlayStation 2),
+  plus sorting. "Show emulators" (off by default), "Installed only" and
   "In my library only" checkboxes. Every game has a store page with artwork, description, story,
   screenshots and facts from IGDB.
 * **Library**: your games (and optionally emulators). Play / install / uninstall, play time,
@@ -269,48 +285,75 @@ Ctrl 0 returns to automatic.
 | settings | Start | |
 | fullscreen | | F11 |
 
+The hint bar at the bottom shows the buttons of the controller in use: Xbox, PlayStation,
+Nintendo (Switch) or Steam Deck, detected from the controller that was used last. With keyboard
+and mouse it shows the keys. Buttons are read by position, so "select" is the bottom face button
+on every controller (B on Nintendo controllers).
+
 ### Client data
 
-Everything is stored in the Electron user data folder (`%APPDATA%/Nostalgia`,
-`~/.config/Nostalgia`). Put a file called `portable` next to the executable, or set
-`NOSTALGIA_DATA_DIR`, to keep it elsewhere. Save backups live in `save-backups/`.
+Everything is stored in `%APPDATA%\@nostalgia\client` (Windows), `~/.config/@nostalgia/client`
+(Linux) or `~/Library/Application Support/@nostalgia/client` (macOS), the same folder the
+earlier Electron client used. Put a file called `portable` next to the executable (a
+`nostalgia-data` folder is then used), or set `NOSTALGIA_DATA_DIR`, to keep it elsewhere. Only one
+client runs per data folder. Save backups live in `save-backups/`.
 
 ---
 
 ## Development
 
+A Cargo workspace:
+
 ```
-shared/   protocol types, RomM platform list, emu.yaml parsing, launch helpers
-server/   Express server, SQLite (node:sqlite), IGDB, Hasheous, admin UI (server/admin)
-client/   Electron main process (src/main), preload, React renderer (src/renderer)
+shared/   crate nostalgia-shared: protocol types, RomM platform list, emu.yaml parsing, launch helpers
+server/   crate nostalgia-server: axum, SQLite (rusqlite), IGDB, Hasheous; admin UI in server/admin
+          (plain HTML/JS, embedded into the binary)
+client/   crate nostalgia: GPUI client (src/ui), downloads, launcher, cloud save sync
 examples/ example emu.yaml files
+scripts/  bump-version.sh, package.sh
 ```
 
 ```bash
-npm run typecheck
-npm test            # server + shared tests (node:test)
-npm run package -w server   # self-contained server package for this OS -> server/release
+cargo test --workspace
+cargo build --release                 # target/release/nostalgia-server, target/release/nostalgia
+scripts/package.sh server             # release package for this OS -> release/
 ```
+
+The admin UI (`server/admin`) is built into the server binary. While working on it, start the server
+with `NOSTALGIA_ADMIN_DIR=server/admin` to serve the files from disk, so changes show up on reload.
+
+### Version
+
+Server and client share one version: `version` under `[workspace.package]` in
+[`Cargo.toml`](Cargo.toml). It is shown in the client (Settings → About), on the admin dashboard,
+in `/api/health`, by `--version` and in the file names of the builds. Change it with
+
+```bash
+scripts/bump-version.sh               # print the current version
+scripts/bump-version.sh patch         # 1.0.0 -> 1.0.1   (also: minor, major, or e.g. 1.2.0)
+```
+
+and commit `Cargo.toml` and `Cargo.lock`.
 
 ### Builds
 
-Every push to `main` runs [Build and pre-release](.github/workflows/prerelease.yml): typecheck
-and tests, client and server for Windows and SteamOS/Linux, then a GitHub **pre-release**
-`v<version>-pre.<run>` with all files and the commits since the previous pre-release (see
-[Releases](https://github.com/neiloru/Nostalgia/releases)). The Docker image is built and pushed on
-every push as well. Each workflow can also be started by hand (*Actions* → workflow → *Run
-workflow*, with `all`, `windows` or `linux` and optionally without tests); the files are then
-attached to the run as artifacts only.
+Every push to `main` runs [Build and pre-release](.github/workflows/prerelease.yml): tests,
+client and server for Windows, SteamOS/Linux and macOS (Apple Silicon), then a GitHub
+**pre-release** `v<version>-pre.<run>` with all files and the commits since the previous
+pre-release (see [Releases](https://github.com/neiloru/Nostalgia/releases)). The Docker image is
+built and pushed on every push as well. Each workflow can also be started by hand (*Actions* →
+workflow → *Run workflow*, with `all`, `windows`, `linux` or `macos` and optionally without
+tests); the files are then attached to the run as artifacts only.
 
-| workflow | Windows | SteamOS / Linux |
-| --- | --- | --- |
-| [Client build](.github/workflows/client.yml) | `Nostalgia-x.y.z-x64-setup.exe` (installer), `Nostalgia-x.y.z-x64-portable.exe` | `Nostalgia-x.y.z-*.AppImage`, `Nostalgia-x.y.z-*.tar.gz` |
-| [Server build](.github/workflows/server.yml) | `nostalgia-server-x.y.z-windows-x64.zip` | `nostalgia-server-x.y.z-linux-x64.tar.gz` |
-| [Docker image](.github/workflows/docker.yml) | | `ghcr.io/neiloru/nostalgia-server` (`latest`, `sha-…`, optional extra tag) |
+| workflow | Windows | SteamOS / Linux | macOS (Apple Silicon) |
+| --- | --- | --- | --- |
+| [Client build](.github/workflows/client.yml) | `Nostalgia-x.y.z-windows-x64.exe` | `Nostalgia-x.y.z-linux-x64.tar.gz` | `Nostalgia-x.y.z-macos-arm64.zip` |
+| [Server build](.github/workflows/server.yml) | `nostalgia-server-x.y.z-windows-x64.zip` | `nostalgia-server-x.y.z-linux-x64.tar.gz` | `nostalgia-server-x.y.z-macos-arm64.tar.gz` |
+| [Docker image](.github/workflows/docker.yml) | | `ghcr.io/neiloru/nostalgia-server` (`latest`, `x.y.z`, `sha-…`, optional extra tag; amd64 + arm64) | |
 
-Server packages contain the bundled server, the admin UI, a Node.js runtime, a start script
-and `settings.example.yaml`. The Linux server package is started and checked in CI before it
-is uploaded. The Docker workflow starts the container and waits for its healthcheck before it
+Server packages contain the server binary (admin UI included), a start script and
+`settings.example.yaml`. The Linux and macOS server packages are started and checked in CI
+before they are uploaded. The Docker workflow starts the container and waits for its healthcheck before it
 pushes. After the first push, set the package to *Public* (GitHub → profile → *Packages* →
 nostalgia-server → *Package settings*) so `docker pull` works without logging in.
 
@@ -319,5 +362,6 @@ nostalgia-server → *Package settings*) so `docker pull` works without logging 
 ## License
 
 [MIT](LICENSE). Game metadata and artwork come from [IGDB](https://www.igdb.com) and are subject
-to their terms; hash lookups use [Hasheous](https://hasheous.org). No games, BIOS files or
-emulators are included in this repository.
+to their terms; hash lookups use [Hasheous](https://hasheous.org). Controller and keyboard
+prompts are [Input Prompts by Kenney](https://kenney.nl/assets/input-prompts) (CC0). No games,
+BIOS files or emulators are included in this repository.

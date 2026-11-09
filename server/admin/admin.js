@@ -100,7 +100,7 @@
         const pct = j.hashing.bytesTotal ? Math.round((j.hashing.bytesDone / j.hashing.bytesTotal) * 100) : 0;
         parts.push(`Hashing ${esc(j.hashing.current || '')} ${pct}%`);
       }
-      $('#jobIndicator').innerHTML = parts.join('<br>');
+      $('#jobIndicator').innerHTML = parts.map((p) => `<span>${p}</span>`).join('');
       const badge = j.scan.last?.unsorted?.length || '';
       $('#unsortedBadge').textContent = badge;
       return j;
@@ -137,6 +137,7 @@
           <div class="card grid">
             <h2>Server</h2>
             <div class="kv small-text">
+              <div>Version</div><div>${esc(o.version)}</div>
               <div>Settings file</div><div class="mono">${esc(o.settingsFile)}</div>
               <div>Library</div><div class="mono">${esc(o.libraryPath)}</div>
               <div>Database</div><div class="mono">${esc(o.databasePath)}</div>
@@ -326,7 +327,7 @@
         <tbody>${emus.length ? emus.map((e) => `<tr data-id="${e.id}">
           <td>${esc(e.name)} ${e.missing ? '<span class="pill err">missing</span>' : ''}<div class="muted small-text mono">${esc(e.relPath)}</div></td>
           <td><span class="pill">${esc(e.platform)}</span></td>
-          <td>${e.supports.map((s) => `<span class="pill ok">${s}</span>`).join(' ') || '-'}</td>
+          <td>${e.supports.map((s) => `<span class="pill">${s}</span>`).join(' ') || '-'}</td>
           <td>${fmtBytes(e.sizeBytes)}<div class="muted small-text">${e.fileCount} files</div></td>
           <td>${e.configError ? `<span class="pill err" title="${esc(e.configError)}">${esc(e.configError)}</span>` : '<span class="pill ok">valid</span>'}</td>
           <td>${e.inLibraries}</td>
@@ -518,6 +519,11 @@ systems:
     arguments: ["-fullscreen", "{rom}"]
     saves:
       - "~/.config/emulator/saves"
+  macos:
+    executable: Emulator.app
+    arguments: ["-fullscreen", "{rom}"]
+    saves:
+      - "{appData}/Emulator/saves"
 `;
   const EMU_HELP = `Placeholders:
   {rom}          absolute path of the selected game file / disc
@@ -526,13 +532,15 @@ systems:
   {emulatorDir}  installed emulator folder
   {home}         user home folder
   {documents}    the user's Documents folder (handles OneDrive redirection)
-  {appData}      %APPDATA% on Windows, ~/.config on Linux
+  {appData}      %APPDATA% on Windows, ~/.config on Linux, ~/Library/Application Support on macOS
   {config}       $XDG_CONFIG_HOME or ~/.config
   {dataHome}     $XDG_DATA_HOME or ~/.local/share
 Environment variables: %USERPROFILE%, %APPDATA%, $HOME, \${XDG_CONFIG_HOME}, ~
 arguments may be a list or a single string ("-nogui -fullscreen \\"{rom}\\"").
 saves: one or more folders - their content is uploaded as a versioned cloud save
        after the emulator closes (only if something changed).
+Systems: windows, linux and/or macos. On macOS the executable may be an .app bundle
+(Emulator.app starts Emulator.app/Contents/MacOS/Emulator).
 Optional per system: workingDirectory, env (map).`;
 
   async function go(page) {
