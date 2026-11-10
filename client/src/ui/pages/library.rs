@@ -267,7 +267,7 @@ impl AppView {
     }
 
     fn detail_hero(&mut self, item: &AnyItem, image: Option<crate::client::Media>, meta: Div) -> Div {
-        let cover = self.cover(item, true, RADIUS);
+        let cover = self.cover(item, true, RADIUS, 120.);
         let mut hero = div().relative().flex().items_end().h(r(300.)).bg(surface()).overflow_hidden();
         if let Some(p) = image {
             hero = hero.child(img(p).absolute().inset_0().size_full().object_fit(ObjectFit::Cover));
@@ -316,7 +316,7 @@ impl AppView {
             self.inputs.extra_args.update(cx, |s, cx| s.set_value(v, window, cx));
         }
 
-        let image = hero_name(detail.as_ref()).and_then(|n| self.client.media(id, &n));
+        let image = hero_name(detail.as_ref()).and_then(|n| self.client.media(id, &n, self.img_w(width)));
         let mut meta = div().flex().flex_wrap().gap(r(12.)).text_size(r(14.5)).text_color(text2()).child(div().font_weight(FontWeight::SEMIBOLD).child(g.platform_name.clone()));
         if let Some(y) = g.year {
             meta = meta.child(div().text_color(faint()).child("·")).child(y.to_string());

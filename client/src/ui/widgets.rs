@@ -203,39 +203,48 @@ pub fn scroll_end(nav: &NavRc, key: &str, handle: &ScrollHandle, content: impl I
 /// scroll area's content and `row_h` the height of a row (including the gap), both in layout
 /// units (`r`). The rows around the screen are there so the navigation can move to them.
 pub fn visible_rows(handle: &ScrollHandle, window: &Window, top: f32, row_h: f32, rows: usize) -> std::ops::Range<usize> {
+    rows_on_screen(handle, window, top, row_h, rows, AROUND)
+}
+
+/// Rows built around the ones on screen (see `visible_rows`).
+pub const AROUND: usize = 2;
+
+/// The rows on screen, plus `around` rows before and after them.
+pub fn rows_on_screen(handle: &ScrollHandle, window: &Window, top: f32, row_h: f32, rows: usize, around: usize) -> std::ops::Range<usize> {
     let zoom = f32::from(window.rem_size()) / 16.0;
     let area = handle.bounds().size.height;
     // Not laid out yet: assume the area fills the window.
     let viewport = f32::from(if area > px(0.) { area } else { window.viewport_size().height }) / zoom;
-    rows_in_view(viewport, -f32::from(handle.offset().y) / zoom, top, row_h, rows)
+    rows_in_view(viewport, -f32::from(handle.offset().y) / zoom, top, row_h, rows, around)
 }
 
 /// `visible_rows` for a viewport height and scroll position (layout units).
-pub fn rows_in_view(viewport: f32, scroll_top: f32, top: f32, row_h: f32, rows: usize) -> std::ops::Range<usize> {
-    const AROUND: usize = 2;
+pub fn rows_in_view(viewport: f32, scroll_top: f32, top: f32, row_h: f32, rows: usize, around: usize) -> std::ops::Range<usize> {
     // The offset is corrected only while painting, e.g. after the list got shorter.
     let max_top = (top + rows as f32 * row_h - viewport).max(0.0);
     let scroll_top = scroll_top.clamp(0.0, max_top);
     let first = ((scroll_top - top) / row_h).floor().max(0.0) as usize;
     let end = ((scroll_top + viewport - top) / row_h).ceil().max(0.0) as usize;
-    first.saturating_sub(AROUND).min(rows)..(end + AROUND).min(rows)
+    first.saturating_sub(around).min(rows)..(end + around).min(rows)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::rows_in_view;
+    use super::{AROUND, rows_in_view};
 
     #[test]
     fn only_rows_on_screen_and_two_around_them_are_built() {
         // 100 rows of 50 below a 100 high heading, 400 visible.
-        assert_eq!(rows_in_view(400., 0., 100., 50., 100), 0..8);
+        assert_eq!(rows_in_view(400., 0., 100., 50., 100, AROUND), 0..8);
         // Scrolled to row 20 (y = 100 + 20 * 50).
-        assert_eq!(rows_in_view(400., 1100., 100., 50., 100), 18..30);
+        assert_eq!(rows_in_view(400., 1100., 100., 50., 100, AROUND), 18..30);
         // Beyond the end (the list got shorter): the last rows.
-        assert_eq!(rows_in_view(400., 99_999., 100., 50., 100), 90..100);
-        assert_eq!(rows_in_view(400., 500., 100., 50., 0), 0..0);
+        assert_eq!(rows_in_view(400., 99_999., 100., 50., 100, AROUND), 90..100);
+        assert_eq!(rows_in_view(400., 500., 100., 50., 0, AROUND), 0..0);
         // A short list.
-        assert_eq!(rows_in_view(400., 0., 0., 50., 3), 0..3);
+        assert_eq!(rows_in_view(400., 0., 0., 50., 3, AROUND), 0..3);
+        // Without the rows around: only those on screen.
+        assert_eq!(rows_in_view(400., 1100., 100., 50., 100, 0), 20..28);
     }
 }
 

@@ -200,6 +200,10 @@ pub struct AppView {
     pub library: pages::LibraryMemo,
     /// Height of the vault's heading above the grid.
     pub vault_header_h: std::rc::Rc<std::cell::Cell<f32>>,
+    /// Device pixels per layout unit (`r`), for loading images at the size they are shown.
+    pub px_per_unit: f32,
+    /// False while building cards just outside the screen: they don't start image downloads.
+    pub load_media: bool,
     pending_focus: Option<FocusTarget>,
     /// Controller family last used (button prompts).
     pub pad_kind: gamepad::PadKind,
@@ -336,6 +340,8 @@ impl AppView {
             vault: Default::default(),
             library: Default::default(),
             vault_header_h: Default::default(),
+            px_per_unit: 1.,
+            load_media: true,
             pending_focus: None,
             pad_kind: gamepad::PadKind::default_for_system(),
             pending_focus_tries: 0,
@@ -853,6 +859,7 @@ impl Render for AppView {
         for image in self.client.take_evicted_media() {
             cx.drop_image(image, Some(window));
         }
+        self.px_per_unit = f32::from(window.rem_size()) / 16. * window.scale_factor();
         self.nav.borrow_mut().begin_frame();
         let body = if !self.state.ready {
             div().size_full().bg(theme::bg()).into_any_element()

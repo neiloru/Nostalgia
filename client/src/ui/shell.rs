@@ -449,7 +449,7 @@ impl AppView {
             }
             Modal::Lightbox { game_id, shots, index } => {
                 let (gid, n, i) = (*game_id, shots.len(), *index);
-                let path = self.client.media(gid, &shots[i]);
+                let path = self.client.media(gid, &shots[i], self.img_w(1100.));
                 let image = match path {
                     Some(p) => img(p).max_h(r(640.)).w_full().object_fit(ObjectFit::Contain).rounded(r(RADIUS)).into_any_element(),
                     None => div().h(r(400.)).w_full().into_any_element(),

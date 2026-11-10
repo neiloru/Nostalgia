@@ -37,6 +37,8 @@ sha1 = "0.10"
 crc32fast = "1"
 percent-encoding = "2"
 http-body-util = "0.1"
+# Scaled-down game media for the clients (src/thumbs.rs).
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 
 [dev-dependencies]
 tempfile = "3"
