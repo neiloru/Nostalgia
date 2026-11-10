@@ -7,29 +7,50 @@ use crate::ui::theme::*;
 use crate::ui::widgets::*;
 use crate::ui::{AppView, Modal, PickFn, SelectOption};
 use crate::util::{fmt_bytes, fmt_duration, fmt_relative};
+use crate::model::{Catalog, ClientState};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
-use nostalgia_shared::{ItemKind, OsKey, locale_compare, platform_info};
+use nostalgia_shared::{ItemKind, LibraryState, OsKey, locale_compare, platform_info};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
+use std::sync::Arc;
 
-fn stat(label: &str, value: String) -> Div {
-    div().flex().flex_col().gap(r(3.)).child(div().text_size(r(12.5)).text_color(muted()).child(label.to_string())).child(div().text_size(r(16.)).font_weight(FontWeight::SEMIBOLD).child(value))
+#[derive(Clone, PartialEq)]
+struct ListKey {
+    query: String,
+    show_emus: bool,
+    installed_only: bool,
+    online: bool,
+    installed: (Vec<i64>, Vec<i64>),
+    library: LibraryState,
 }
 
-impl AppView {
-    pub fn render_library(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Div {
-        let nav = self.nav.clone();
-        let state = self.state.clone();
-        let jobs = self.jobs.clone();
-        let q = self.input_value(&self.inputs.lib_search.clone(), cx).trim().to_lowercase();
-        let (show_emus, installed_only) = (self.prefs.lib_emulators, self.prefs.lib_installed);
+/// The library's sorted, filtered entries. A library can hold thousands of games, so they are
+/// computed again only when the library, the catalog or the search change.
+#[derive(Default)]
+pub struct LibraryMemo {
+    catalog: Option<Arc<Catalog>>,
+    key: Option<ListKey>,
+    items: Rc<Vec<(ItemKind, i64)>>,
+    /// "kind:lower-case name" of entries whose name is on several platforms.
+    dups: Rc<HashSet<String>>,
+}
 
-        let mut items: Vec<AnyItem> = state.library.games.iter().filter_map(|id| state.game(*id).cloned()).map(AnyItem::Game).collect();
-        if show_emus {
-            items.extend(state.library.emulators.iter().filter_map(|id| state.emulator(*id).cloned()).map(AnyItem::Emu));
+impl LibraryMemo {
+    fn update(&mut self, state: &ClientState, key: ListKey) {
+        if self.catalog.as_ref().is_some_and(|c| Arc::ptr_eq(c, &state.catalog)) && self.key.as_ref() == Some(&key) {
+            return;
         }
-        items.retain(|it| (q.is_empty() || it.name().to_lowercase().contains(&q)) && (!installed_only || state.installed(it.kind(), it.id()).is_some()));
+        // Installed items that are no longer in the library (e.g. removed on another device) are
+        // listed too, so they can be uninstalled or added again.
+        let games = state.library.games.iter().chain(state.installed.games.keys().filter(|id| !state.library_games.contains(id)));
+        let emulators = state.library.emulators.iter().chain(state.installed.emulators.keys().filter(|id| !state.library_emulators.contains(id)));
+        let mut items: Vec<AnyItem> = games.clone().filter_map(|id| state.game(*id).cloned()).map(AnyItem::Game).collect();
+        if key.show_emus {
+            items.extend(emulators.clone().filter_map(|id| state.emulator(*id).cloned()).map(AnyItem::Emu));
+        }
+        let q = &key.query;
+        items.retain(|it| (q.is_empty() || it.name().to_lowercase().contains(q)) && (!key.installed_only || state.installed(it.kind(), it.id()).is_some()));
         items.sort_by(|a, b| {
             if a.kind() != b.kind() {
                 return if a.kind() == ItemKind::Game { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
@@ -45,12 +66,41 @@ impl AppView {
         });
         // Names that appear on more than one platform get the short platform name appended.
         let mut plats: HashMap<String, HashSet<String>> = HashMap::new();
-        for it in state.library.games.iter().filter_map(|id| state.game(*id)) {
+        for it in games.filter_map(|id| state.game(*id)) {
             plats.entry(format!("game:{}", it.name.to_lowercase())).or_default().insert(it.platform.clone());
         }
-        for it in state.library.emulators.iter().filter_map(|id| state.emulator(*id)) {
+        for it in emulators.filter_map(|id| state.emulator(*id)) {
             plats.entry(format!("emulator:{}", it.name.to_lowercase())).or_default().insert(it.platform.clone());
         }
+        self.dups = Rc::new(plats.into_iter().filter(|(_, p)| p.len() > 1).map(|(k, _)| k).collect());
+        self.items = Rc::new(items.iter().map(|i| (i.kind(), i.id())).collect());
+        self.catalog = Some(state.catalog.clone());
+        self.key = Some(key);
+    }
+}
+
+fn stat(label: &str, value: String) -> Div {
+    div().flex().flex_col().gap(r(3.)).child(div().text_size(r(12.5)).text_color(muted()).child(label.to_string())).child(div().text_size(r(16.)).font_weight(FontWeight::SEMIBOLD).child(value))
+}
+
+impl AppView {
+    pub fn render_library(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Div {
+        let nav = self.nav.clone();
+        let state = self.state.clone();
+        let jobs = self.jobs.clone();
+        let q = self.input_value(&self.inputs.lib_search.clone(), cx).trim().to_lowercase();
+        let (show_emus, installed_only) = (self.prefs.lib_emulators, self.prefs.lib_installed);
+
+        let key = ListKey {
+            query: q,
+            show_emus,
+            installed_only,
+            online: state.online,
+            installed: (state.installed.games.keys().copied().collect(), state.installed.emulators.keys().copied().collect()),
+            library: state.library.clone(),
+        };
+        self.library.update(&state, key);
+        let (items, dups) = (self.library.items.clone(), self.library.dups.clone());
 
         // Moving through the list selects the entry (like the onFocus handler). Done before the
         // detail panel is chosen, so it shows the focused entry in this frame and not one step late.
@@ -60,13 +110,13 @@ impl AppView {
             && let Ok(id) = id.parse::<i64>()
         {
             let kind = if k == "game" { ItemKind::Game } else { ItemKind::Emulator };
-            if items.iter().any(|i| i.kind() == kind && i.id() == id) {
+            if items.contains(&(kind, id)) {
                 self.lib_sel = Some((kind, id));
             }
         }
         let current = match self.lib_sel {
-            Some((k, id)) if items.iter().any(|i| i.kind() == k && i.id() == id) => Some((k, id)),
-            _ => items.first().map(|i| (i.kind(), i.id())),
+            Some(sel) if items.contains(&sel) => Some(sel),
+            _ => items.first().copied(),
         };
         let width = view_width(window, &state);
         let list_w = if width < 1100. { 260. } else { 320. };
@@ -76,15 +126,40 @@ impl AppView {
             // Rows are built inside the scroll area (scrolled into view when focused); the search
             // box and toggles above it are not.
             scroll_begin(&nav, "lib-list", &list_handle);
+            // Only the rows on screen are built (a library can hold thousands of games). Every
+            // row, also the "Emulators" heading, is ROW_H high.
+            const ROW_H: f32 = 34.;
+            let emus_at = items.iter().position(|(k, _)| *k == ItemKind::Emulator);
+            let count = items.len() + emus_at.is_some() as usize;
+            let shown = visible_rows(&list_handle, window, 8., ROW_H + 2., count);
             let mut rows = div().flex().flex_col().gap(r(2.)).p(r(8.));
-            for (i, it) in items.iter().enumerate() {
-                if it.kind() == ItemKind::Emulator && items.get(i.wrapping_sub(1)).is_none_or(|p| p.kind() != ItemKind::Emulator) {
-                    rows = rows.child(div().px(r(12.)).pt(r(16.)).pb(r(6.)).text_size(r(12.5)).font_weight(FontWeight::SEMIBOLD).text_color(faint()).child("Emulators"));
-                }
+            if shown.start > 0 {
+                rows = rows.child(div().flex_none().h(r(shown.start as f32 * (ROW_H + 2.) - 2.)));
+            }
+            for row in shown.clone() {
+                // Row index -> entry, with the heading before the first emulator.
+                let i = match emus_at {
+                    Some(at) if row == at => {
+                        rows = rows.child(
+                            div().flex().flex_none().items_end().h(r(ROW_H)).px(r(12.)).pb(r(6.)).text_size(r(12.5)).font_weight(FontWeight::SEMIBOLD).text_color(faint()).child("Emulators"),
+                        );
+                        continue;
+                    }
+                    Some(at) if row > at => row - 1,
+                    _ => row,
+                };
+                let (kind, iid) = items[i];
+                let Some(it) = (match kind {
+                    ItemKind::Game => state.game(iid).cloned().map(AnyItem::Game),
+                    ItemKind::Emulator => state.emulator(iid).cloned().map(AnyItem::Emu),
+                }) else {
+                    continue;
+                };
+                let it = &it;
                 let st = item_status(&state, &jobs, it.kind(), it.id());
                 let active = current == Some((it.kind(), it.id()));
                 let unavailable = !state.online && !st.installed;
-                let dup = plats.get(&format!("{}:{}", it.kind().as_str(), it.name().to_lowercase())).is_some_and(|p| p.len() > 1);
+                let dup = dups.contains(&format!("{}:{}", it.kind().as_str(), it.name().to_lowercase()));
                 let label = if dup { format!("{} ({})", it.name(), platform_info(it.platform()).short) } else { it.name().to_string() };
                 let id: SharedString = format!("lib:{}", it.key()).into();
                 let focused = nav.borrow().ring(&id);
@@ -93,7 +168,8 @@ impl AppView {
                     .flex()
                     .items_center()
                     .gap(r(10.))
-                    .min_h(r(34.))
+                    .h(r(ROW_H))
+                    .flex_none()
                     .px(r(12.))
                     .rounded(r(RADIUS))
                     .text_color(if active || st.installed || focused { text() } else { muted() })
@@ -122,6 +198,9 @@ impl AppView {
                     active,
                     cx,
                 ));
+            }
+            if shown.end < count {
+                rows = rows.child(div().flex_none().h(r((count - shown.end) as f32 * (ROW_H + 2.) - 2.)));
             }
             if items.is_empty() {
                 let mut e = div().flex().flex_col().items_center().gap(r(14.)).py(r(30.)).px(r(12.)).text_size(r(14.)).text_color(muted()).child(if state.library.games.is_empty() {
@@ -390,25 +469,23 @@ impl AppView {
                 );
             }), cx));
         }
-        let client = self.client.clone();
-        col = col.child(btn(format!("manage:{}:remove", kind.as_str()), "Remove from library").ghost().disabled(!state.online).render(&nav, action(move |this, window, cx| {
-            let c = client.clone();
-            this.open_modal(
-                Modal::Confirm {
-                    title: "Remove from library?".into(),
-                    message: "Installed files stay on this device. Cloud saves are kept on the server.".into(),
-                    confirm: "Remove".into(),
-                    danger: true,
-                    on_confirm: action(move |this, _, cx| {
-                        let c = c.clone();
-                        this.act(async move { c.remove_from_library(kind, id).await }, None, cx);
-                    }),
-                },
-                window,
+        let mut p = panel().child(h2("Manage"));
+        if state.in_library(kind, id) {
+            let installed = path.is_some();
+            col = col.child(btn(format!("manage:{}:remove", kind.as_str()), "Remove from library").ghost().disabled(!state.online).render(
+                &nav,
+                action(move |this, window, cx| this.confirm_remove_from_library(kind, id, installed, window, cx)),
                 cx,
-            );
-        }), cx));
-        let mut p = panel().child(h2("Manage")).child(col);
+            ));
+        } else {
+            p = p.child(div().mb(r(12.)).text_size(r(13.5)).text_color(muted()).child("Installed on this device, but not in your library."));
+            let client = self.client.clone();
+            col = col.child(btn(format!("manage:{}:add", kind.as_str()), "Add to library").icon("plus").disabled(!state.online).render(&nav, action(move |this, _, cx| {
+                let c = client.clone();
+                this.act(async move { c.add_to_library(kind, id).await }, Some("Added to your library"), cx);
+            }), cx));
+        }
+        let mut p = p.child(col);
         if let Some(path) = path {
             p = p.child(div().mt(r(8.)).text_size(r(13.)).text_color(muted()).child(path));
         }
@@ -513,7 +590,10 @@ impl AppView {
         let state = self.state.clone();
         let Some(e) = state.emulator(id).cloned() else { return div() };
         let installed = state.installed(ItemKind::Emulator, id).cloned();
-        let games: Vec<_> = state.catalog_games.iter().filter(|g| g.platform == e.platform && state.library.games.contains(&g.id)).cloned().collect();
+        let mut games: Vec<_> = state.catalog.games.iter().filter(|g| g.platform == e.platform && state.library_games.contains(&g.id)).collect();
+        games.sort_by(|a, b| locale_compare(&a.name, &b.name));
+        let total = games.len();
+        games.truncate(super::LIST_MAX);
         let meta = div().flex().gap(r(12.)).text_size(r(14.5)).text_color(text2()).child(div().font_weight(FontWeight::SEMIBOLD).child(e.platform_name.clone())).child(div().text_color(faint()).child("·")).child("Emulator");
         let hero = self.detail_hero(&AnyItem::Emu(e.clone()), None, meta);
         let actions = if !state.online && installed.is_none() {
@@ -531,14 +611,14 @@ impl AppView {
             .border_b_1()
             .border_color(line())
             .child(actions)
-            .child(div().flex().gap(r(36.)).ml_auto().child(stat("Size", fmt_bytes(e.size_bytes as u64))).child(stat("Games in library", games.len().to_string())));
+            .child(div().flex().gap(r(36.)).ml_auto().child(stat("Size", fmt_bytes(e.size_bytes as u64))).child(stat("Games in library", total.to_string())));
         let saves = group(&nav, "panel:saves", false, || {
             let b = self.save_box(id, cx);
             panel().child(h2("Cloud saves")).child(b)
         });
         let your_games = group(&nav, "panel:games", false, || {
             let mut list = div().flex().flex_col().gap(r(2.));
-            for g in &games {
+            for g in games {
                 let gid = g.id;
                 let lid: SharedString = format!("emu-game:{gid}").into();
                 let focused = nav.borrow().ring(&lid);
@@ -555,8 +635,15 @@ impl AppView {
                     .child(g.name.clone());
                 list = list.child(focusable(row, &nav, lid, Ring::Inset(RADIUS), Some(action(move |this, window, cx| this.open_in_library(ItemKind::Game, gid, window, cx))), cx));
             }
-            if games.is_empty() {
+            if total == 0 {
                 list = list.child(div().text_color(muted()).child("No games for this emulator in your library."));
+            } else if total > super::LIST_MAX {
+                let platform = e.platform.clone();
+                list = list.child(div().mt(r(10.)).child(btn("emu:all-games", format!("Show all {total} in the vault")).render(
+                    &nav,
+                    action(move |this, window, cx| this.show_platform_in_vault(&platform, true, window, cx)),
+                    cx,
+                )));
             }
             panel().child(h2("Your games")).child(list)
         });

@@ -4,11 +4,13 @@ use super::{AnyItem, text_input, view_width};
 use crate::ui::theme::*;
 use crate::ui::widgets::*;
 use crate::ui::{AppView, Filters, Modal, PickFn, SelectOption};
+use crate::model::{Catalog, ClientState};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
-use nostalgia_shared::{ItemKind, locale_compare};
-use std::collections::BTreeSet;
+use nostalgia_shared::{GameSummary, ItemKind, LibraryState, locale_compare};
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
+use std::sync::Arc;
 
 fn uniq(xs: impl Iterator<Item = String>) -> Vec<String> {
     let mut v: Vec<String> = xs.filter(|s| !s.is_empty()).collect::<BTreeSet<_>>().into_iter().collect();
@@ -20,6 +22,245 @@ fn decade(y: Option<i64>) -> String {
     y.map(|y| format!("{}s", y / 10 * 10)).unwrap_or_default()
 }
 
+/// A vault entry: index into the catalog's games or emulators.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Entry {
+    Game(usize),
+    Emu(usize),
+}
+
+impl Entry {
+    fn item(self, c: &Catalog) -> AnyItem {
+        match self {
+            Entry::Game(i) => AnyItem::Game(c.games[i].clone()),
+            Entry::Emu(i) => AnyItem::Emu(c.emulators[i].clone()),
+        }
+    }
+}
+
+/// What the filter column offers.
+#[derive(Default)]
+struct Options {
+    platforms: Vec<(String, String)>,
+    genres: Vec<String>,
+    themes: Vec<String>,
+    modes: Vec<String>,
+    devs: Vec<String>,
+    decades: Vec<String>,
+}
+
+impl Options {
+    fn new(c: &Catalog, show_emulators: bool) -> Options {
+        let games = &c.games;
+        let mut platforms: BTreeMap<String, String> = BTreeMap::new();
+        for g in games.iter() {
+            platforms.entry(g.platform.clone()).or_insert_with(|| g.platform_name.clone());
+        }
+        if show_emulators {
+            for e in c.emulators.iter() {
+                platforms.entry(e.platform.clone()).or_insert_with(|| e.platform_name.clone());
+            }
+        }
+        let mut platforms: Vec<(String, String)> = platforms.into_iter().filter(|(p, _)| !p.is_empty()).collect();
+        platforms.sort_by(|a, b| locale_compare(&a.0, &b.0));
+        Options {
+            platforms,
+            genres: uniq(games.iter().flat_map(|g| g.genres.iter().cloned())),
+            themes: uniq(games.iter().flat_map(|g| g.themes.iter().cloned())),
+            modes: uniq(games.iter().flat_map(|g| g.game_modes.iter().cloned())),
+            devs: uniq(games.iter().flat_map(|g| g.developers.iter().cloned())),
+            decades: uniq(games.iter().map(|g| decade(g.year))),
+        }
+    }
+}
+
+/// What the shown items depend on besides the catalog.
+#[derive(Clone, PartialEq)]
+struct ItemsKey {
+    filters: Filters,
+    query: String,
+    online: bool,
+    installed: (Vec<i64>, Vec<i64>),
+    library: LibraryState,
+}
+
+/// The vault's filter options and its filtered, sorted items. The catalog can hold thousands of
+/// games, so they are computed again only when the catalog, the filters or the search change.
+#[derive(Default)]
+pub struct VaultMemo {
+    catalog: Option<Arc<Catalog>>,
+    show_emulators: bool,
+    options: Rc<Options>,
+    /// Lower-case names of the games and emulators (search, sorting).
+    names: (Vec<String>, Vec<String>),
+    /// Every entry in the order of a sort key.
+    sorted: Option<(String, Rc<Vec<Entry>>)>,
+    key: Option<ItemsKey>,
+    items: Rc<Vec<Entry>>,
+    /// Filters and search the items were last shown for.
+    shown_for: Option<(Filters, String)>,
+}
+
+impl VaultMemo {
+    /// Brings options and items up to date; whether other filters or another search are shown
+    /// than last time.
+    fn update(&mut self, state: &ClientState, f: &Filters, query: &str) -> bool {
+        let shown_for = Some((f.clone(), query.to_string()));
+        let refiltered = self.shown_for.is_some() && self.shown_for != shown_for;
+        self.shown_for = shown_for;
+        let c = &state.catalog;
+        let same_catalog = self.catalog.as_ref().is_some_and(|x| Arc::ptr_eq(x, c));
+        if !same_catalog || self.show_emulators != f.show_emulators {
+            if !same_catalog {
+                self.names = (c.games.iter().map(|g| g.name.to_lowercase()).collect(), c.emulators.iter().map(|e| e.name.to_lowercase()).collect());
+            }
+            self.catalog = Some(c.clone());
+            self.show_emulators = f.show_emulators;
+            self.options = Rc::new(Options::new(c, f.show_emulators));
+            self.sorted = None;
+            self.key = None;
+        }
+        let sort = if f.sort.is_empty() { "name" } else { f.sort.as_str() };
+        if self.sorted.as_ref().is_none_or(|(s, _)| s != sort) {
+            self.sorted = Some((sort.to_string(), Rc::new(self.sort(c, sort))));
+        }
+        let key = ItemsKey {
+            filters: f.clone(),
+            query: query.to_string(),
+            online: state.online,
+            installed: (state.installed.games.keys().copied().collect(), state.installed.emulators.keys().copied().collect()),
+            library: state.library.clone(),
+        };
+        if self.key.as_ref() == Some(&key) {
+            return refiltered;
+        }
+        let all = self.sorted.as_ref().map(|(_, v)| v.clone()).unwrap_or_default();
+        let mut items: Vec<Entry> = all.iter().copied().filter(|e| self.matches(state, *e, f, query)).collect();
+        if !state.online {
+            items.sort_by_key(|e| match *e {
+                Entry::Game(i) => state.installed(ItemKind::Game, c.games[i].id).is_none(),
+                Entry::Emu(i) => state.installed(ItemKind::Emulator, c.emulators[i].id).is_none(),
+            });
+        }
+        self.items = Rc::new(items);
+        self.key = Some(key);
+        refiltered
+    }
+
+    /// Games first, then emulators (when shown), each by the sort key and then by name.
+    fn sort(&self, c: &Catalog, sort: &str) -> Vec<Entry> {
+        let (gn, en) = &self.names;
+        let g = |i: usize| -> &GameSummary { &c.games[i] };
+        let mut games: Vec<usize> = (0..c.games.len()).collect();
+        games.sort_by(|&a, &b| {
+            let by_name = || locale_compare(&gn[a], &gn[b]);
+            match sort {
+                "year" => g(b).year.unwrap_or(0).cmp(&g(a).year.unwrap_or(0)).then_with(by_name),
+                "rating" => g(b).rating.unwrap_or(0.0).total_cmp(&g(a).rating.unwrap_or(0.0)).then_with(by_name),
+                "added" => g(b).added_at.cmp(&g(a).added_at),
+                _ => by_name(),
+            }
+        });
+        let mut emus: Vec<usize> = if self.show_emulators { (0..c.emulators.len()).collect() } else { Vec::new() };
+        emus.sort_by(|&a, &b| match sort {
+            "added" => c.emulators[b].added_at.cmp(&c.emulators[a].added_at),
+            _ => locale_compare(&en[a], &en[b]),
+        });
+        games.into_iter().map(Entry::Game).chain(emus.into_iter().map(Entry::Emu)).collect()
+    }
+
+    fn matches(&self, state: &ClientState, e: Entry, f: &Filters, q: &str) -> bool {
+        let c = &state.catalog;
+        let (kind, id, platform, platform_name, name) = match e {
+            Entry::Game(i) => (ItemKind::Game, c.games[i].id, &c.games[i].platform, &c.games[i].platform_name, &self.names.0[i]),
+            Entry::Emu(i) => (ItemKind::Emulator, c.emulators[i].id, &c.emulators[i].platform, &c.emulators[i].platform_name, &self.names.1[i]),
+        };
+        if !q.is_empty() && !name.contains(q) && !platform_name.to_lowercase().contains(q) {
+            return false;
+        }
+        if !f.platform.is_empty() && !f.platform.iter().any(|p| p == platform) {
+            return false;
+        }
+        if f.installed_only && state.installed(kind, id).is_none() {
+            return false;
+        }
+        if f.library_only && !state.in_library(kind, id) {
+            return false;
+        }
+        // A filter with several values matches any of them.
+        let any = |list: &Vec<String>, hit: &dyn Fn(&String) -> bool| list.is_empty() || list.iter().any(hit);
+        match e {
+            Entry::Game(i) => {
+                let g = &c.games[i];
+                any(&f.genre, &|v| g.genres.contains(v))
+                    && any(&f.theme, &|v| g.themes.contains(v))
+                    && any(&f.mode, &|v| g.game_modes.contains(v))
+                    && any(&f.developer, &|v| g.developers.contains(v) || g.publishers.contains(v))
+                    && any(&f.decade, &|v| decade(g.year) == *v)
+            }
+            Entry::Emu(_) => f.genre.is_empty() && f.theme.is_empty() && f.mode.is_empty() && f.developer.is_empty() && f.decade.is_empty(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Entry, VaultMemo};
+    use crate::model::{Catalog, ClientState};
+    use crate::ui::Filters;
+    use nostalgia_shared::GameSummary;
+    use std::rc::Rc;
+    use std::sync::Arc;
+
+    fn game(id: i64, name: &str, platform: &str, year: i64) -> GameSummary {
+        serde_json::from_value(serde_json::json!({ "id": id, "kind": "game", "name": name, "platform": platform, "platformName": platform.to_uppercase(),
+            "folder": "f", "igdbId": 0, "sizeBytes": 0, "fileCount": 0, "hasCover": false, "hasArtwork": false, "year": year, "addedAt": "" }))
+        .unwrap()
+    }
+
+    fn state(games: Vec<GameSummary>) -> ClientState {
+        ClientState { online: true, catalog: Arc::new(Catalog::new(Arc::new(games), Arc::new(Vec::new()))), ..Default::default() }
+    }
+
+    fn names(m: &VaultMemo, s: &ClientState) -> Vec<String> {
+        m.items.iter().map(|e| match e {
+            Entry::Game(i) => s.catalog.games[*i].name.clone(),
+            Entry::Emu(i) => s.catalog.emulators[*i].name.clone(),
+        }).collect()
+    }
+
+    #[test]
+    fn items_are_sorted_filtered_and_kept_until_something_changes() {
+        let s = state(vec![game(1, "Zelda", "snes", 1991), game(2, "ape escape", "psx", 1999), game(3, "Bomberman", "snes", 1993)]);
+        let mut m = VaultMemo::default();
+        let mut f = Filters::default();
+        assert!(!m.update(&s, &f, ""), "the first list is not a change of filters");
+        assert_eq!(names(&m, &s), ["ape escape", "Bomberman", "Zelda"]);
+        let before = m.items.clone();
+        assert!(!m.update(&s, &f, ""));
+        assert!(Rc::ptr_eq(&before, &m.items), "nothing is computed again");
+
+        assert!(m.update(&s, &f, "ze"));
+        assert_eq!(names(&m, &s), ["Zelda"]);
+        f.platform = vec!["snes".into()];
+        f.sort = "year".into();
+        assert!(m.update(&s, &f, ""));
+        assert_eq!(names(&m, &s), ["Bomberman", "Zelda"]);
+
+        // A new catalog from the server is not a change of filters (the scroll position stays).
+        let s2 = state(vec![game(1, "Zelda", "snes", 1991), game(4, "Contra III", "snes", 1992)]);
+        assert!(!m.update(&s2, &f, ""));
+        assert_eq!(names(&m, &s2), ["Contra III", "Zelda"]);
+    }
+
+    #[test]
+    fn the_catalog_finds_games_by_id() {
+        let s = state(vec![game(7, "A", "psx", 2000), game(3, "B", "psx", 2001)]);
+        assert_eq!(s.game(3).map(|g| g.name.as_str()), Some("B"));
+        assert!(s.game(5).is_none());
+    }
+}
+
 impl AppView {
     pub fn render_vault(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         if let Some((kind, id)) = self.store_sel {
@@ -29,74 +270,13 @@ impl AppView {
         let state = self.state.clone();
         let f = self.prefs.vault_filters.clone();
         let q = self.input_value(&self.inputs.vault_search.clone(), cx).trim().to_lowercase();
-        let games = &state.catalog_games;
-        let emus = &state.catalog_emulators;
-
-        // Options.
-        let mut plats: Vec<String> = games.iter().map(|g| g.platform.clone()).collect();
-        if f.show_emulators {
-            plats.extend(emus.iter().map(|e| e.platform.clone()));
-        }
-        let platforms: Vec<(String, String)> = uniq(plats.into_iter())
-            .into_iter()
-            .map(|p| {
-                let name = games.iter().find(|g| g.platform == p).map(|g| g.platform_name.clone()).or_else(|| emus.iter().find(|e| e.platform == p).map(|e| e.platform_name.clone())).unwrap_or(p.clone());
-                (p, name)
-            })
-            .collect();
-        let genres = uniq(games.iter().flat_map(|g| g.genres.clone()));
-        let themes = uniq(games.iter().flat_map(|g| g.themes.clone()));
-        let modes = uniq(games.iter().flat_map(|g| g.game_modes.clone()));
-        let devs = uniq(games.iter().flat_map(|g| g.developers.clone()));
-        let decades = uniq(games.iter().map(|g| decade(g.year)));
-
-        // Items.
-        let mut items: Vec<AnyItem> = games.iter().cloned().map(AnyItem::Game).collect();
-        if f.show_emulators {
-            items.extend(emus.iter().cloned().map(AnyItem::Emu));
-        }
-        items.retain(|it| {
-            if !q.is_empty() && !it.name().to_lowercase().contains(&q) && !it.platform_name().to_lowercase().contains(&q) {
-                return false;
-            }
-            if !f.platform.is_empty() && !f.platform.iter().any(|p| p == it.platform()) {
-                return false;
-            }
-            if f.installed_only && state.installed(it.kind(), it.id()).is_none() {
-                return false;
-            }
-            if f.library_only && !state.in_library(it.kind(), it.id()) {
-                return false;
-            }
-            // A filter with several values matches any of them.
-            let any = |list: &Vec<String>, hit: &dyn Fn(&String) -> bool| list.is_empty() || list.iter().any(hit);
-            match it {
-                AnyItem::Game(g) => {
-                    any(&f.genre, &|v| g.genres.contains(v))
-                        && any(&f.theme, &|v| g.themes.contains(v))
-                        && any(&f.mode, &|v| g.game_modes.contains(v))
-                        && any(&f.developer, &|v| g.developers.contains(v) || g.publishers.contains(v))
-                        && any(&f.decade, &|v| decade(g.year) == *v)
-                }
-                AnyItem::Emu(_) => f.genre.is_empty() && f.theme.is_empty() && f.mode.is_empty() && f.developer.is_empty() && f.decade.is_empty(),
-            }
-        });
-        items.sort_by(|a, b| {
-            let by = |x: &AnyItem| x.name().to_lowercase();
-            if a.kind() != b.kind() {
-                return if a.kind() == ItemKind::Game { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
-            }
-            match (f.sort.as_str(), a, b) {
-                ("year", AnyItem::Game(x), AnyItem::Game(y)) => y.year.unwrap_or(0).cmp(&x.year.unwrap_or(0)).then_with(|| locale_compare(&by(a), &by(b))),
-                ("rating", AnyItem::Game(x), AnyItem::Game(y)) => {
-                    y.rating.unwrap_or(0.0).total_cmp(&x.rating.unwrap_or(0.0)).then_with(|| locale_compare(&by(a), &by(b)))
-                }
-                ("added", _, _) => b.added_at().cmp(a.added_at()),
-                _ => locale_compare(&by(a), &by(b)),
-            }
-        });
-        if !state.online {
-            items.sort_by_key(|it| state.installed(it.kind(), it.id()).is_none());
+        let refiltered = self.vault.update(&state, &f, &q);
+        let (options, items) = (self.vault.options.clone(), self.vault.items.clone());
+        let catalog = state.catalog.clone();
+        let main_handle = self.scroll("vault-main");
+        if refiltered {
+            // Start at the top of the new list.
+            main_handle.set_offset(point(px(0.), px(0.)));
         }
 
         let width = view_width(window, &state);
@@ -110,12 +290,12 @@ impl AppView {
         let simple = |xs: &Vec<String>| xs.iter().map(|x| (x.clone(), x.clone())).collect::<Vec<_>>();
         // (key, label, "all" label, (value, label) options): several values can be picked.
         let lists: Vec<(&'static str, &str, &str, Vec<(String, String)>)> = vec![
-            ("platform", "Platform", "All platforms", platforms),
-            ("genre", "Genre", "Any genre", simple(&genres)),
-            ("theme", "Theme", "Any theme", simple(&themes)),
-            ("mode", "Game mode", "Any mode", simple(&modes)),
-            ("decade", "Era", "Any year", simple(&decades)),
-            ("developer", "Developer / publisher", "Anyone", simple(&devs)),
+            ("platform", "Platform", "All platforms", options.platforms.clone()),
+            ("genre", "Genre", "Any genre", simple(&options.genres)),
+            ("theme", "Theme", "Any theme", simple(&options.themes)),
+            ("mode", "Game mode", "Any mode", simple(&options.modes)),
+            ("decade", "Era", "Any year", simple(&options.decades)),
+            ("developer", "Developer / publisher", "Anyone", simple(&options.devs)),
         ];
         let sort_opts: Vec<(String, String)> =
             vec![("name".into(), "Name".into()), ("year".into(), "Release year".into()), ("rating".into(), "Rating".into()), ("added".into(), "Recently added".into())];
@@ -211,18 +391,32 @@ impl AppView {
         let gap = 20.;
         let cols = ((main_w + gap) / (170. + gap)).floor().max(1.);
         let card_w = (main_w - gap * (cols - 1.)) / cols;
-        let main_handle = self.scroll("vault-main");
         let count = items.len();
         // The cards are built between begin and end so they belong to the group and scroll area
-        // (moving the focus scrolls them into view).
+        // (moving the focus scrolls them into view). Only the rows on screen are built: the vault
+        // can hold thousands of games.
         group_begin(&nav, "vault-main", true);
         scroll_begin(&nav, "vault-main", &main_handle);
-        let mut grid = div().flex().flex_wrap().gap_x(r(gap)).gap_y(r(26.));
-        for (i, it) in items.iter().enumerate() {
-            grid = grid.child(self.game_card(it, card_w, i == 0, cx));
+        let cols = cols as usize;
+        let stride = super::card_height(card_w) + 26.;
+        let rows = count.div_ceil(cols);
+        let shown = visible_rows(&main_handle, window, 24. + self.vault_header_h.get(), stride, rows);
+        let mut grid = div().flex().flex_col();
+        if shown.start > 0 {
+            grid = grid.child(div().flex_none().h(r(shown.start as f32 * stride)));
+        }
+        for row in shown.clone() {
+            let mut line = div().flex().flex_none().items_start().gap_x(r(gap)).h(r(stride));
+            for (i, e) in items.iter().enumerate().skip(row * cols).take(cols) {
+                line = line.child(self.game_card(&e.item(&catalog), card_w, i == 0, cx));
+            }
+            grid = grid.child(line);
+        }
+        if shown.end < rows {
+            grid = grid.child(div().flex_none().h(r((rows - shown.end) as f32 * stride)));
         }
         let offline = (!state.online).then(|| self.offline_banner(cx));
-        let empty_msg = if !games.is_empty() {
+        let empty_msg = if !catalog.games.is_empty() {
             "Nothing matches these filters."
         } else if state.online {
             "The server has no games yet."
@@ -234,15 +428,22 @@ impl AppView {
                 .px(r(32.))
                 .pt(r(24.))
                 .pb(r(48.))
-                .children(offline)
                 .child(
                     div()
+                        .relative()
                         .flex()
-                        .items_end()
-                        .gap(r(14.))
-                        .mb(r(22.))
-                        .child(h1("Vault"))
-                        .child(div().pb(r(4.)).text_color(muted()).child(format!("{count} {}", if count == 1 { "title" } else { "titles" }))),
+                        .flex_col()
+                        .children(offline)
+                        .child(
+                            div()
+                                .flex()
+                                .items_end()
+                                .gap(r(14.))
+                                .mb(r(22.))
+                                .child(h1("Vault"))
+                                .child(div().pb(r(4.)).text_color(muted()).child(format!("{count} {}", if count == 1 { "title" } else { "titles" }))),
+                        )
+                        .child(measure_height(self.vault_header_h.clone())),
                 )
                 .child(if count > 0 { grid.into_any_element() } else { div().py(r(60.)).text_center().text_color(muted()).child(empty_msg).into_any_element() });
             let area = scroll_end(&nav, "vault-main", &main_handle, content).size_full();

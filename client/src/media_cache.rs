@@ -65,8 +65,8 @@ impl<T> MediaCache<T> {
         std::mem::take(&mut self.evicted)
     }
 
-    #[cfg(test)]
-    fn size(&self) -> usize {
+    /// Bytes held.
+    pub fn size(&self) -> usize {
         self.size
     }
 }

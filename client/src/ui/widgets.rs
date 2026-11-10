@@ -180,8 +180,80 @@ pub fn scroll_begin(nav: &NavRc, key: &str, handle: &ScrollHandle) {
 }
 
 pub fn scroll_end(nav: &NavRc, key: &str, handle: &ScrollHandle, content: impl IntoElement) -> Stateful<Div> {
+    use gpui_kit::base::{Scrollbar, ScrollbarMode};
     nav.borrow_mut().pop_scroll();
-    div().id(SharedString::from(format!("scroll-{key}"))).overflow_y_scroll().track_scroll(handle).child(content)
+    let area = div().id(SharedString::from(format!("scroll-{key}"))).flex_grow_1().flex_shrink(1.).min_h_0().overflow_y_scroll().track_scroll(handle).child(content);
+    // Shown only when the content is taller than the area; the thumb can be dragged.
+    let bar = Scrollbar::vertical(handle)
+        .id(SharedString::from(format!("scrollbar-{key}")))
+        .mode(ScrollbarMode::Always)
+        .viewport_from_layout()
+        .styles(|s| {
+            s.track(|t| t.bg(transparent_black()))
+                .thumb(|t| t.bg(ca(0xffffff2e)).width(px(6.)).inset(px(3.)).radius(px(3.)))
+                .thumb_hover(|t| t.bg(ca(0xffffff55)).width(px(8.)).inset(px(3.)).radius(px(4.)))
+                .thumb_active(|t| t.bg(ca(0xffffff70)).width(px(8.)).inset(px(3.)).radius(px(4.)))
+        });
+    // The callers size this wrapper; the area fills it (or shrinks to a maximum height).
+    div().id(SharedString::from(format!("scrollwrap-{key}"))).relative().flex().flex_col().min_h_0().child(area).child(div().absolute().inset_0().child(bar))
+}
+
+/// The rows of a long list that are on screen, plus a few around them: only those are built, the
+/// rest is replaced by empty space of the same height. `top` is where the list starts in the
+/// scroll area's content and `row_h` the height of a row (including the gap), both in layout
+/// units (`r`). The rows around the screen are there so the navigation can move to them.
+pub fn visible_rows(handle: &ScrollHandle, window: &Window, top: f32, row_h: f32, rows: usize) -> std::ops::Range<usize> {
+    let zoom = f32::from(window.rem_size()) / 16.0;
+    let area = handle.bounds().size.height;
+    // Not laid out yet: assume the area fills the window.
+    let viewport = f32::from(if area > px(0.) { area } else { window.viewport_size().height }) / zoom;
+    rows_in_view(viewport, -f32::from(handle.offset().y) / zoom, top, row_h, rows)
+}
+
+/// `visible_rows` for a viewport height and scroll position (layout units).
+pub fn rows_in_view(viewport: f32, scroll_top: f32, top: f32, row_h: f32, rows: usize) -> std::ops::Range<usize> {
+    const AROUND: usize = 2;
+    // The offset is corrected only while painting, e.g. after the list got shorter.
+    let max_top = (top + rows as f32 * row_h - viewport).max(0.0);
+    let scroll_top = scroll_top.clamp(0.0, max_top);
+    let first = ((scroll_top - top) / row_h).floor().max(0.0) as usize;
+    let end = ((scroll_top + viewport - top) / row_h).ceil().max(0.0) as usize;
+    first.saturating_sub(AROUND).min(rows)..(end + AROUND).min(rows)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rows_in_view;
+
+    #[test]
+    fn only_rows_on_screen_and_two_around_them_are_built() {
+        // 100 rows of 50 below a 100 high heading, 400 visible.
+        assert_eq!(rows_in_view(400., 0., 100., 50., 100), 0..8);
+        // Scrolled to row 20 (y = 100 + 20 * 50).
+        assert_eq!(rows_in_view(400., 1100., 100., 50., 100), 18..30);
+        // Beyond the end (the list got shorter): the last rows.
+        assert_eq!(rows_in_view(400., 99_999., 100., 50., 100), 90..100);
+        assert_eq!(rows_in_view(400., 500., 100., 50., 0), 0..0);
+        // A short list.
+        assert_eq!(rows_in_view(400., 0., 0., 50., 3), 0..3);
+    }
+}
+
+/// Records the height of its parent (in layout units) for layouts that depend on it; draws the
+/// next frame again when it changed.
+pub fn measure_height(cell: Rc<std::cell::Cell<f32>>) -> impl IntoElement {
+    canvas(
+        move |b, window, _| {
+            let h = f32::from(b.size.height) / (f32::from(window.rem_size()) / 16.0);
+            if (h - cell.get()).abs() > 0.5 {
+                cell.set(h);
+                window.on_next_frame(|window, _| window.refresh());
+            }
+        },
+        |_, _, _, _| {},
+    )
+    .absolute()
+    .size_full()
 }
 
 /// `group` in two steps (see `scroll_begin`).

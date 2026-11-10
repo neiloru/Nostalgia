@@ -5,7 +5,8 @@
 use nostalgia_shared::{EmulatorSummary, GameSummary, ItemKind, LibraryState, OsKey, PlaytimeEntry, RemoteFile, SaveVersion, User};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -239,10 +240,11 @@ pub struct PendingFile {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Cache {
+    /// Shared with the UI snapshot (the catalog can hold thousands of games: never copied).
     #[serde(default)]
-    pub games: Vec<GameSummary>,
+    pub games: Arc<Vec<GameSummary>>,
     #[serde(default)]
-    pub emulators: Vec<EmulatorSummary>,
+    pub emulators: Arc<Vec<EmulatorSummary>>,
     #[serde(default)]
     pub library: LibraryState,
     #[serde(default)]
@@ -260,8 +262,8 @@ impl Cache {
         let games: HashSet<i64> = self.library.games.iter().chain(installed.games.keys()).copied().collect();
         let emulators: HashSet<i64> = self.library.emulators.iter().chain(installed.emulators.keys()).copied().collect();
         Cache {
-            games: self.games.iter().filter(|g| games.contains(&g.id)).cloned().collect(),
-            emulators: self.emulators.iter().filter(|e| emulators.contains(&e.id)).cloned().collect(),
+            games: Arc::new(self.games.iter().filter(|g| games.contains(&g.id)).cloned().collect()),
+            emulators: Arc::new(self.emulators.iter().filter(|e| emulators.contains(&e.id)).cloned().collect()),
             library: self.library.clone(),
             playtime: self.playtime.clone(),
             latest_saves: self.latest_saves.clone(),
@@ -289,15 +291,45 @@ pub struct LaunchEmulator {
     pub supported: bool,
 }
 
+/// The server's games and emulators with lookups by id. Built once per catalog download and
+/// shared by every UI snapshot.
+#[derive(Debug, Default)]
+pub struct Catalog {
+    pub games: Arc<Vec<GameSummary>>,
+    pub emulators: Arc<Vec<EmulatorSummary>>,
+    game_index: HashMap<i64, usize>,
+    emulator_index: HashMap<i64, usize>,
+}
+
+impl Catalog {
+    pub fn new(games: Arc<Vec<GameSummary>>, emulators: Arc<Vec<EmulatorSummary>>) -> Catalog {
+        let game_index = games.iter().enumerate().map(|(i, g)| (g.id, i)).collect();
+        let emulator_index = emulators.iter().enumerate().map(|(i, e)| (e.id, i)).collect();
+        Catalog { games, emulators, game_index, emulator_index }
+    }
+    /// Built from exactly these lists.
+    pub fn is_for(&self, games: &Arc<Vec<GameSummary>>, emulators: &Arc<Vec<EmulatorSummary>>) -> bool {
+        Arc::ptr_eq(&self.games, games) && Arc::ptr_eq(&self.emulators, emulators)
+    }
+    pub fn game(&self, id: i64) -> Option<&GameSummary> {
+        self.game_index.get(&id).map(|i| &self.games[*i])
+    }
+    pub fn emulator(&self, id: i64) -> Option<&EmulatorSummary> {
+        self.emulator_index.get(&id).map(|i| &self.emulators[*i])
+    }
+}
+
 /// Everything the UI renders, rebuilt after each change (cheap to clone: Arc'd by the caller).
 #[derive(Debug, Clone, Default)]
 pub struct ClientState {
     pub ready: bool,
     pub session: Option<(String, User)>,
     pub online: bool,
-    pub catalog_games: Vec<GameSummary>,
-    pub catalog_emulators: Vec<EmulatorSummary>,
+    pub catalog: Arc<Catalog>,
     pub library: LibraryState,
+    /// `library` as sets (membership is checked for every item of long lists).
+    pub library_games: HashSet<i64>,
+    pub library_emulators: HashSet<i64>,
     pub installed: Installed,
     pub playtime: BTreeMap<i64, PlaytimeEntry>,
     pub settings: ClientSettings,
@@ -314,18 +346,18 @@ pub struct ClientState {
 
 impl ClientState {
     pub fn game(&self, id: i64) -> Option<&GameSummary> {
-        self.catalog_games.iter().find(|g| g.id == id)
+        self.catalog.game(id)
     }
     pub fn emulator(&self, id: i64) -> Option<&EmulatorSummary> {
-        self.catalog_emulators.iter().find(|e| e.id == id)
+        self.catalog.emulator(id)
     }
     pub fn installed(&self, kind: ItemKind, id: i64) -> Option<&InstalledItem> {
         self.installed.get(kind, id)
     }
     pub fn in_library(&self, kind: ItemKind, id: i64) -> bool {
         match kind {
-            ItemKind::Game => self.library.games.contains(&id),
-            ItemKind::Emulator => self.library.emulators.contains(&id),
+            ItemKind::Game => self.library_games.contains(&id),
+            ItemKind::Emulator => self.library_emulators.contains(&id),
         }
     }
 }

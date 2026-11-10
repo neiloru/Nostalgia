@@ -58,7 +58,7 @@ pub enum Modal {
 
 /// Vault filters (persisted like the Electron client's localStorage). Each list filter matches any
 /// of its values; an empty list is "all".
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Filters {
     #[serde(deserialize_with = "one_or_many")]
@@ -194,6 +194,12 @@ pub struct AppView {
     pub details_loading: HashSet<i64>,
     // scroll areas
     pub scrolls: HashMap<&'static str, ScrollHandle>,
+    /// Filter options and items of the vault, rebuilt only when they change.
+    pub vault: pages::VaultMemo,
+    /// The library list, rebuilt only when it changes.
+    pub library: pages::LibraryMemo,
+    /// Height of the vault's heading above the grid.
+    pub vault_header_h: std::rc::Rc<std::cell::Cell<f32>>,
     pending_focus: Option<FocusTarget>,
     /// Controller family last used (button prompts).
     pub pad_kind: gamepad::PadKind,
@@ -327,6 +333,9 @@ impl AppView {
             details: HashMap::new(),
             details_loading: HashSet::new(),
             scrolls: HashMap::new(),
+            vault: Default::default(),
+            library: Default::default(),
+            vault_header_h: Default::default(),
             pending_focus: None,
             pad_kind: gamepad::PadKind::default_for_system(),
             pending_focus_tries: 0,
@@ -358,6 +367,7 @@ impl AppView {
             }
             UiEvent::Downloads => self.jobs = self.client.download_jobs(),
             UiEvent::Toast { message, error } => self.toast(message, error, cx),
+            UiEvent::Media => {}
             UiEvent::Minimize => window.minimize_window(),
             UiEvent::Restore => window.activate_window(),
         }
@@ -601,6 +611,14 @@ impl AppView {
     }
 
     pub fn open_modal(&mut self, m: Modal, window: &mut Window, cx: &mut Context<Self>) {
+        if let Modal::MultiSelect { key, values, .. } = &m {
+            // Only the options on screen are built: scroll to the first chosen one so it can get the focus.
+            let chosen = self.prefs.vault_filters.list(key);
+            let first = values.iter().position(|v| !v.is_empty() && chosen.contains(v)).unwrap_or(0);
+            let zoom = f32::from(window.rem_size()) / 16.0;
+            let top = (first as f32 - 2.0).max(0.0) * shell::OPTION_ROW;
+            self.scroll("modal-list").set_offset(point(px(0.), px(-top * zoom)));
+        }
         let prev = self.nav.borrow().focused.clone();
         self.modals.push((m, prev));
         self.request_focus(FocusTarget::FirstIn("modal"), window, cx);
