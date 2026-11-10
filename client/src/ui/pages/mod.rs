@@ -89,7 +89,13 @@ pub fn pct(j: &DownloadJob) -> u32 {
 impl AppView {
     /// Cover image (or a placeholder with the name) of a game / emulator, filling its parent.
     /// `radius` rounds the image itself: GPUI clips children of a rounded parent to a rectangle.
-    pub fn cover(&mut self, item: &AnyItem, small: bool, radius: f32) -> AnyElement {
+    /// Device pixels of `width` layout units: the width to load an image at.
+    pub fn img_w(&self, width: f32) -> u32 {
+        (width * self.px_per_unit).ceil().max(1.) as u32
+    }
+
+    /// `width`: the width it is shown at, in layout units.
+    pub fn cover(&mut self, item: &AnyItem, small: bool, radius: f32, width: f32) -> AnyElement {
         match item {
             AnyItem::Emu(e) => {
                 let mut d = div().size_full().rounded(r(radius)).flex().flex_col().items_center().justify_center().gap(r(10.)).p(r(14.)).bg(surface2()).child(icon("chip", 42., muted()));
@@ -102,7 +108,7 @@ impl AppView {
             }
             AnyItem::Game(g) => {
                 if g.has_cover
-                    && let Some(p) = self.client.media(g.id, "cover.jpg")
+                    && let Some(p) = self.client.media_if(self.load_media, g.id, "cover.jpg", self.img_w(width))
                 {
                     return img(p).size_full().rounded(r(radius)).object_fit(ObjectFit::Cover).into_any_element();
                 }
@@ -142,7 +148,7 @@ impl AppView {
             .rounded(r(RADIUS))
             .overflow_hidden()
             .bg(surface2())
-            .child(self.cover(item, false, RADIUS))
+            .child(self.cover(item, false, RADIUS, width))
             .child(badges);
         if let Some(j) = st.job {
             cover = cover.child(

@@ -17,21 +17,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-/// Media of a game: a file of an installed game, or an image held in memory (catalog browsing).
-#[derive(Clone)]
-pub enum Media {
-    File(PathBuf),
-    Image(Arc<gpui_kit::RenderImage>),
-}
-
-impl From<Media> for gpui_kit::ImageSource {
-    fn from(m: Media) -> Self {
-        match m {
-            Media::File(p) => p.into(),
-            Media::Image(i) => i.into(),
-        }
-    }
-}
+/// Media of a game, decoded at the size it is shown and held in the in-memory media cache.
+pub type Media = Arc<gpui_kit::RenderImage>;
 
 #[derive(Debug, Clone)]
 pub enum UiEvent {
@@ -1025,24 +1012,29 @@ impl Client {
     /// `igdb/<name>` of a game: the file in the install folder, else the image from the in-memory
     /// cache. Missing images are downloaded and decoded in the background (the UI re-renders when
     /// they arrive).
-    pub fn media(self: &Arc<Self>, game_id: i64, name: &str) -> Option<Media> {
+    /// A game's image (`cover.jpg`, a screenshot, ...) scaled down to `width` device pixels (0: as
+    /// it is). Installed games have their media in the install folder, the others are downloaded
+    /// (the server scales them down too). Returns None while it is loading.
+    pub fn media(self: &Arc<Self>, game_id: i64, name: &str, width: u32) -> Option<Media> {
+        self.media_if(true, game_id, name, width)
+    }
+
+    /// `media`, but only loads the image when `load` is set (otherwise only a loaded one is returned).
+    pub fn media_if(self: &Arc<Self>, load: bool, game_id: i64, name: &str, width: u32) -> Option<Media> {
+        let width = media_width(width);
         let (inst, server) = {
             let i = self.lock();
             (i.installed(ItemKind::Game, game_id), i.session.data().session.as_ref().map(|s| s.server_url.clone()))
         };
-        if let Some(inst) = inst {
-            let p = Path::new(&inst.path).join("igdb").join(name);
-            if p.exists() {
-                return Some(Media::File(p));
-            }
-        }
-        let key: MediaKey = (server?, game_id, name.to_string());
+        let local = inst.map(|i| Path::new(&i.path).join("igdb").join(name)).filter(|p| p.exists());
+        let source = if local.is_some() { "local".to_string() } else { server? };
+        let key: MediaKey = (source, game_id, name.to_string(), width);
         {
             let mut i = self.lock();
             if let Some(image) = i.media.get(&key, Instant::now()) {
-                return Some(Media::Image(image));
+                return Some(image);
             }
-            if !i.online || i.media_failed.contains(&key) {
+            if !load || (local.is_none() && !i.online) || i.media_failed.contains(&key) {
                 return None;
             }
             // Already on its way: remember that it is still shown.
@@ -1061,14 +1053,19 @@ impl Client {
                 return;
             }
             let ok: anyhow::Result<()> = async {
-                let path = format!("/games/{game_id}/media/{}", crate::util_url::encode(&key.2));
-                let url = me.api_url(&path, Some(&key.0))?;
-                let res = me.send(&path, me.request(reqwest::Method::GET, &url).timeout(Duration::from_secs(30))).await?;
-                if !res.status().is_success() {
-                    anyhow::bail!("HTTP {}", res.status());
-                }
-                let bytes = res.bytes().await?;
-                let (image, size) = tokio::task::spawn_blocking(move || decode_image(&bytes)).await??;
+                let bytes: Vec<u8> = match &local {
+                    Some(p) => tokio::fs::read(p).await?,
+                    None => {
+                        let path = format!("/games/{game_id}/media/{}?w={width}", crate::util_url::encode(&key.2));
+                        let url = me.api_url(&path, Some(&key.0))?;
+                        let res = me.send(&path, me.request(reqwest::Method::GET, &url).timeout(Duration::from_secs(30))).await?;
+                        if !res.status().is_success() {
+                            anyhow::bail!("HTTP {}", res.status());
+                        }
+                        res.bytes().await?.to_vec()
+                    }
+                };
+                let (image, size) = tokio::task::spawn_blocking(move || decode_image(&bytes, width)).await??;
                 me.lock().media.insert(key.clone(), Arc::new(image), size, Instant::now());
                 Ok(())
             }
@@ -1099,9 +1096,22 @@ const MEDIA_DOWNLOADS: usize = 6;
 /// A waiting image that was not shown for this long is no longer on screen.
 const MEDIA_STALE: Duration = Duration::from_millis(1500);
 
-/// Decodes an image for GPUI (BGRA), with its size in memory.
-fn decode_image(bytes: &[u8]) -> anyhow::Result<(gpui_kit::RenderImage, usize)> {
-    let mut data = image::load_from_memory(bytes)?.into_rgba8();
+/// Image widths are rounded up to a multiple of this, so a few sizes of an image are cached and
+/// asked for (also by the server, which keeps the scaled down images).
+const MEDIA_WIDTH_STEP: u32 = 64;
+const MEDIA_MAX_WIDTH: u32 = 1920;
+
+fn media_width(width: u32) -> u32 {
+    if width == 0 { 0 } else { (width.div_ceil(MEDIA_WIDTH_STEP) * MEDIA_WIDTH_STEP).min(MEDIA_MAX_WIDTH) }
+}
+
+/// Decodes an image for GPUI (BGRA), scaled down to `width` (0: as it is), with its size in memory.
+fn decode_image(bytes: &[u8], width: u32) -> anyhow::Result<(gpui_kit::RenderImage, usize)> {
+    let mut image = image::load_from_memory(bytes)?;
+    if width > 0 && image.width() > width {
+        image = image.resize(width, u32::MAX, image::imageops::FilterType::Triangle);
+    }
+    let mut data = image.into_rgba8();
     for pixel in data.chunks_exact_mut(4) {
         pixel.swap(0, 2);
     }

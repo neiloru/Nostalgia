@@ -78,7 +78,7 @@ impl AppView {
                 ItemKind::Emulator => state.emulator(j.id).cloned().map(AnyItem::Emu),
             };
             let thumb = match &item {
-                Some(it) => self.cover(it, true, 6.),
+                Some(it) => self.cover(it, true, 6., 54.),
                 None => div().into_any_element(),
             };
             let status_color = match j.status {

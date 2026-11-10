@@ -401,17 +401,21 @@ impl AppView {
         let stride = super::card_height(card_w) + 26.;
         let rows = count.div_ceil(cols);
         let shown = visible_rows(&main_handle, window, 24. + self.vault_header_h.get(), stride, rows);
+        // The rows around the screen show covers only when they are already loaded.
+        let on_screen = rows_on_screen(&main_handle, window, 24. + self.vault_header_h.get(), stride, rows, 0);
         let mut grid = div().flex().flex_col();
         if shown.start > 0 {
             grid = grid.child(div().flex_none().h(r(shown.start as f32 * stride)));
         }
         for row in shown.clone() {
             let mut line = div().flex().flex_none().items_start().gap_x(r(gap)).h(r(stride));
+            self.load_media = on_screen.contains(&row);
             for (i, e) in items.iter().enumerate().skip(row * cols).take(cols) {
                 line = line.child(self.game_card(&e.item(&catalog), card_w, i == 0, cx));
             }
             grid = grid.child(line);
         }
+        self.load_media = true;
         if shown.end < rows {
             grid = grid.child(div().flex_none().h(r((rows - shown.end) as f32 * stride)));
         }

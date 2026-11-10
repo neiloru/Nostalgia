@@ -15,6 +15,7 @@ pub mod log;
 pub mod routes_admin;
 pub mod routes_api;
 pub mod saves;
+pub mod thumbs;
 pub mod util;
 
 use axum::Router;

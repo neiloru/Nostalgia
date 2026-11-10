@@ -9,15 +9,17 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// Decoded size kept in memory (BGRA). A cover is about 0.4 MB, a 1080p artwork about 8 MB.
-pub const LIMIT: usize = 256 * 1024 * 1024;
+/// Decoded size kept in memory (BGRA); the GPU holds another copy of the images on screen. Images
+/// are decoded at the size they are shown: a vault cover is 0.3 to 0.8 MB, so a screen full of
+/// them takes 6 to 20 MB.
+pub const LIMIT: usize = 24 * 1024 * 1024;
 
 /// Images shown this recently are never dropped, even above the limit: they are on screen, and
 /// dropping them would download them again on the next frame.
-const KEEP: Duration = Duration::from_secs(5);
+const KEEP: Duration = Duration::from_secs(1);
 
-/// Server URL, game id, file name.
-pub type MediaKey = (String, i64, String);
+/// Server URL (or "local" for an installed game), game id, file name, width.
+pub type MediaKey = (String, i64, String, u32);
 
 struct Entry<T> {
     value: Arc<T>,
@@ -78,7 +80,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     fn key(id: i64) -> MediaKey {
-        ("http://server".into(), id, "cover.jpg".into())
+        ("http://server".into(), id, "cover.jpg".into(), 256)
     }
 
     #[test]

@@ -4086,6 +4086,7 @@ dependencies = [
  "futures-util",
  "hex",
  "http-body-util",
+ "image",
  "md-5",
  "nostalgia-shared",
  "percent-encoding",

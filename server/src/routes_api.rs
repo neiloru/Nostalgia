@@ -150,12 +150,33 @@ async fn game_download(
     send_inside(&s.library.game_dir(&row.rel_path), q.get("path").map(String::as_str).unwrap_or(""), &headers, true).await
 }
 
-async fn game_media(State(s): State<AppState>, _a: AuthUser, Path((id, name)): Path<(String, String)>, headers: HeaderMap) -> HttpResult<Response> {
+/// `?w=<pixels>`: scaled down to that width (see `thumbs`).
+async fn game_media(
+    State(s): State<AppState>,
+    _a: AuthUser,
+    Path((id, name)): Path<(String, String)>,
+    Query(q): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+) -> HttpResult<Response> {
     let row = s.library.get_game(id_param(&id, "id")?).ok_or_else(|| HttpError::not_found("Game not found"))?;
     if !MEDIA_RE.is_match(&name) {
         return Err(HttpError::new(400, "Invalid media name"));
     }
-    let mut res = send_inside(&s.library.game_dir(&row.rel_path).join(ASSET_DIR), &name, &headers, false).await?;
+    let dir = s.library.game_dir(&row.rel_path).join(ASSET_DIR);
+    let scaled = match crate::thumbs::width_param(q.get("w")) {
+        Some(w) if dir.join(&name).is_file() => {
+            let thumbs = s.settings.database_path.join("thumbs");
+            crate::thumbs::scaled(&dir.join(&name), &thumbs, row.id, &name, w).await.unwrap_or_else(|e| {
+                crate::log::warn(format!("Could not scale {name} of game {}: {e}", row.id));
+                None
+            })
+        }
+        _ => None,
+    };
+    let mut res = match scaled {
+        Some(p) => send_file(&p, &headers, &[]).await?,
+        None => send_inside(&dir, &name, &headers, false).await?,
+    };
     res.headers_mut().insert(header::CACHE_CONTROL, "private, max-age=86400".parse().unwrap());
     Ok(res)
 }
