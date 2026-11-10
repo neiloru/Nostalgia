@@ -20,7 +20,7 @@ impl Client {
     }
 
     fn emulators_for(&self, platform: &str) -> Vec<EmulatorSummary> {
-        self.lock().cache().emulators.into_iter().filter(|e| e.platform == platform).collect()
+        self.lock().cache_ref().map(|c| c.emulators.iter().filter(|e| e.platform == platform).cloned().collect()).unwrap_or_default()
     }
 
     fn game_platform(&self, game_id: i64) -> Option<String> {

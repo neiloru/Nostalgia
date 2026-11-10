@@ -7,6 +7,18 @@ mod settings;
 mod store;
 mod vault;
 
+pub use library::LibraryMemo;
+pub use vault::VaultMemo;
+
+/// Longest list of games built on a page; longer ones link to the vault (which builds only the
+/// part on screen).
+pub const LIST_MAX: usize = 60;
+
+/// Height of a vault card of this width: cover, two lines of title, platform line.
+pub fn card_height(width: f32) -> f32 {
+    width * 4.0 / 3.0 + 10. + 38. + 10. - 4. + 18.
+}
+
 use super::nav::NavRc;
 use super::theme::surface;
 use super::theme::*;
@@ -49,18 +61,6 @@ impl AnyItem {
         match self {
             AnyItem::Game(g) => &g.platform,
             AnyItem::Emu(e) => &e.platform,
-        }
-    }
-    pub fn platform_name(&self) -> &str {
-        match self {
-            AnyItem::Game(g) => &g.platform_name,
-            AnyItem::Emu(e) => &e.platform_name,
-        }
-    }
-    pub fn added_at(&self) -> &str {
-        match self {
-            AnyItem::Game(g) => &g.added_at,
-            AnyItem::Emu(e) => &e.added_at,
         }
     }
     pub fn key(&self) -> String {
@@ -153,7 +153,7 @@ impl AppView {
         if focused {
             cover_wrap = cover_wrap.child(ring_overlay(Ring::Outer(RADIUS)).top(r(-7.)).left(r(-7.)).right(r(-7.)).bottom(r(-7.)));
         }
-        let mut sub = div().flex().gap(r(8.)).text_size(r(12.5)).text_color(muted()).mt(r(-4.)).child(item.platform().to_uppercase());
+        let mut sub = div().flex().gap(r(8.)).text_size(r(12.5)).line_height(r(18.)).text_color(muted()).mt(r(-4.)).child(item.platform().to_uppercase());
         match item {
             AnyItem::Game(g) => {
                 if let Some(y) = g.year {
@@ -168,6 +168,8 @@ impl AppView {
             .flex_col()
             .gap(r(10.))
             .w(r(width))
+            .h(r(card_height(width)))
+            .flex_none()
             .when(disabled, |d| d.opacity(0.3))
             .child(cover_wrap)
             .child(
@@ -175,6 +177,8 @@ impl AppView {
                     .text_size(r(14.5))
                     .font_weight(FontWeight::MEDIUM)
                     .line_height(r(19.))
+                    .max_h(r(38.))
+                    .overflow_hidden()
                     .text_color(if focused { c(0xffffff) } else { text2() })
                     .line_clamp(2)
                     .child(item.name().to_string()),
@@ -270,16 +274,18 @@ impl AppView {
 
     pub fn confirm_remove_from_library(&mut self, kind: ItemKind, id: i64, installed: bool, window: &mut Window, cx: &mut Context<Self>) {
         let client = self.client.clone();
-        let msg = if installed {
-            "The game stays installed on this device. Cloud saves are kept on the server."
-        } else {
-            "You can add it again at any time from the vault."
+        let downloading = client.find_job(kind, id).is_some();
+        let msg = match kind {
+            ItemKind::Game if installed => "The game is also uninstalled from this device. Your cloud saves and play time stay on the server.",
+            ItemKind::Emulator if installed => "The emulator is also uninstalled from this device. Local saves are uploaded first.",
+            _ if downloading => "Its download is cancelled. You can add it again at any time from the vault.",
+            _ => "You can add it again at any time from the vault.",
         };
         self.open_modal(
             Modal::Confirm {
                 title: "Remove from library?".into(),
                 message: msg.into(),
-                confirm: "Remove".into(),
+                confirm: if installed { "Remove and uninstall" } else { "Remove" }.into(),
                 danger: true,
                 on_confirm: action(move |this, _, cx| {
                     let c = client.clone();
@@ -337,6 +343,17 @@ impl AppView {
             Some(k) => self.request_focus(super::FocusTarget::Id(format!("card:{k}")), window, cx),
             None => self.request_focus(super::FocusTarget::FirstIn("vault-main"), window, cx),
         }
+    }
+
+    /// The vault, filtered to the games of a platform (and of the library).
+    pub fn show_platform_in_vault(&mut self, platform: &str, library_only: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let f = &self.prefs.vault_filters;
+        self.prefs.vault_filters = super::Filters { show_emulators: f.show_emulators, sort: f.sort.clone(), platform: vec![platform.to_string()], library_only, ..Default::default() };
+        self.save_prefs();
+        self.store_sel = None;
+        self.last_card = None;
+        self.tab = super::Tab::Vault;
+        self.request_focus(super::FocusTarget::FirstIn("vault-main"), window, cx);
     }
 
     pub fn open_in_library(&mut self, kind: ItemKind, id: i64, window: &mut Window, cx: &mut Context<Self>) {

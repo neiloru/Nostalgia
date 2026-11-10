@@ -20,7 +20,7 @@ nostalgia-shared.workspace = true
 percent-encoding = "2.3.2"
 regex.workspace = true
 reqwest = { workspace = true, default-features = false, features = ["json", "stream", "rustls-tls"] }
-serde = { workspace = true, features = ["derive"] }
+serde = { workspace = true, features = ["derive", "rc"] }
 serde_json = { workspace = true, features = ["preserve_order"] }
 sha2.workspace = true
 tokio = { workspace = true, features = ["full"] }

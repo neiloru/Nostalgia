@@ -8,7 +8,7 @@ use crate::ui::{AppView, Modal};
 use crate::util::{fmt_bytes, fmt_duration, fmt_long_date};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
-use nostalgia_shared::{GameDetail, ItemKind};
+use nostalgia_shared::{GameDetail, ItemKind, locale_compare};
 
 /// Hero image of a game: first artwork, else first screenshot.
 pub fn hero_name(d: Option<&GameDetail>) -> Option<String> {
@@ -154,7 +154,7 @@ impl AppView {
             .children(fact("Series", join(m.as_ref().map(|m| &m.franchises))))
             .children(fact("Size", Some(format!("{} · {} files", fmt_bytes(g.size_bytes as u64), g.file_count))))
             .children(fact("Installed in", installed_path));
-        let emus: Vec<_> = state.catalog_emulators.iter().filter(|e| e.platform == g.platform).cloned().collect();
+        let emus: Vec<_> = state.catalog.emulators.iter().filter(|e| e.platform == g.platform).cloned().collect();
         let side = group(&nav, "store-side", false, || {
             let mut side = div().flex().flex_col().gap(r(18.)).w(if narrow { relative(1.) } else { r(320.).into() }).flex_none().child(facts);
             if !emus.is_empty() {
@@ -272,7 +272,10 @@ impl AppView {
         });
         let hero = self.hero(None, back, cover, info, narrow, 320.);
 
-        let games: Vec<_> = state.catalog_games.iter().filter(|g| g.platform == e.platform).cloned().collect();
+        let mut games: Vec<_> = state.catalog.games.iter().filter(|g| g.platform == e.platform).collect();
+        games.sort_by(|a, b| locale_compare(&a.name, &b.name));
+        let total = games.len();
+        games.truncate(super::LIST_MAX);
         let main = group(&nav, "store-main", false, || {
             let mut saves = div()
                 .flex()
@@ -290,7 +293,7 @@ impl AppView {
                 saves = saves.child(div().font_family(MONO).text_size(r(12.5)).text_color(text2()).child(format!("• {s}")));
             }
             let mut list = div().flex().flex_col().gap(r(2.));
-            for g in &games {
+            for g in games {
                 let gid = g.id;
                 let lid: SharedString = format!("store:game:{gid}").into();
                 let focused = nav.borrow().ring(&lid);
@@ -307,8 +310,15 @@ impl AppView {
                     .child(g.name.clone());
                 list = list.child(focusable(row, &nav, lid, Ring::Inset(RADIUS), Some(action(move |this, window, cx| this.open_store(ItemKind::Game, gid, window, cx))), cx));
             }
-            if games.is_empty() {
+            if total == 0 {
                 list = list.child(div().text_color(muted()).child("No games for this platform yet."));
+            } else if total > super::LIST_MAX {
+                let platform = e.platform.clone();
+                list = list.child(div().mt(r(10.)).child(btn("store:all-games", format!("Show all {total} games in the vault")).render(
+                    &nav,
+                    action(move |this, window, cx| this.show_platform_in_vault(&platform, false, window, cx)),
+                    cx,
+                )));
             }
             div().flex().flex_col().child(saves).child(div().flex().flex_col().child(h2(format!("Games for {}", e.platform_name))).child(list))
         });

@@ -439,17 +439,22 @@ impl Client {
         }
     }
 
+    /// A running game or emulator can't be uninstalled.
+    pub fn check_not_running(&self, kind: ItemKind, id: i64) -> Result<(), ApiError> {
+        let running = self.lock().running.clone();
+        match kind {
+            ItemKind::Emulator if running.as_ref().is_some_and(|r| r.emulator_id == id) => Err(ApiError::new(0, "The emulator is running")),
+            ItemKind::Game if running.as_ref().is_some_and(|r| r.game_id == id) => Err(ApiError::new(0, "The game is running")),
+            _ => Ok(()),
+        }
+    }
+
     /// Only folders created by Nostalgia inside a download location are removed.
     pub async fn uninstall(self: &Arc<Self>, kind: ItemKind, id: i64) -> Result<(), ApiError> {
         let Some(item) = self.installed(kind, id) else { return Ok(()) };
-        let running = self.lock().running.clone();
+        self.check_not_running(kind, id)?;
         if kind == ItemKind::Emulator {
-            if running.as_ref().is_some_and(|r| r.emulator_id == id) {
-                return Err(ApiError::new(0, "The emulator is running"));
-            }
             let _ = self.sync_up(id, "before uninstall").await;
-        } else if running.as_ref().is_some_and(|r| r.game_id == id) {
-            return Err(ApiError::new(0, "The game is running"));
         }
         let path = PathBuf::from(&item.path);
         let ok = path.join(MANIFEST).exists() && crate::util::is_inside(&path, Path::new(&item.location));

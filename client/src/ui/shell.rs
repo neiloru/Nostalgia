@@ -29,6 +29,9 @@ pub fn style_components(cx: &mut App) {
     colors.primary = text();
 }
 
+
+/// Height of an option in the multiple choice dialog, with the gap to the next one.
+pub const OPTION_ROW: f32 = 48.;
 impl AppView {
     pub fn render_shell(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let content = group(&self.nav.clone(), "content", true, || {
@@ -268,6 +271,8 @@ impl AppView {
                     .items_center()
                     .justify_center()
                     .bg(ca(0x000000b3))
+                    // Nothing behind the dialog gets the mouse, also not the scroll wheel.
+                    .occlude()
                     .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| this.close_modal(window, cx)))
                     .child(m)
                     .into_any_element(),
@@ -279,7 +284,6 @@ impl AppView {
     /// (title, wide, body) of the modal at `idx`.
     fn modal_body(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) -> (Option<String>, bool, AnyElement) {
         let nav = self.nav.clone();
-        let _ = window;
         let list_handle = self.scroll("modal-list");
         let versions_handle = self.scroll("versions");
         match &self.modals[idx].0 {
@@ -327,8 +331,13 @@ impl AppView {
                 let first_checked = values.iter().position(|v| if v.is_empty() { chosen.is_empty() } else { chosen.contains(v) }).unwrap_or(0);
                 let handle = list_handle;
                 scroll_begin(&nav, "modal-list", &handle);
+                // Only the options on screen are built (there can be thousands of developers).
+                let shown = visible_rows(&handle, window, 0., OPTION_ROW, values.len());
                 let mut list = div().flex().flex_col().gap(r(2.));
-                for (i, (value, label)) in values.iter().zip(labels.iter()).enumerate() {
+                if shown.start > 0 {
+                    list = list.child(div().flex_none().h(r(shown.start as f32 * OPTION_ROW - 2.)));
+                }
+                for (i, (value, label)) in values.iter().zip(labels.iter()).enumerate().skip(shown.start).take(shown.len()) {
                     let id: SharedString = format!("opt:{idx}:{i}").into();
                     let focused = nav.borrow().ring(&id);
                     let on = if value.is_empty() { chosen.is_empty() } else { chosen.contains(value) };
@@ -347,14 +356,14 @@ impl AppView {
                         .flex()
                         .items_center()
                         .gap(r(12.))
-                        .min_h(r(46.))
+                        .h(r(OPTION_ROW - 2.))
+                        .flex_none()
                         .px(r(14.))
-                        .py(r(8.))
                         .rounded(r(RADIUS))
                         .when(focused, |d| d.bg(surface3()))
                         .hover(|s| s.bg(surface2()))
                         .child(check)
-                        .child(div().flex_1().child(label.clone()));
+                        .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().child(label.clone()));
                     let v = value.clone();
                     let act = action(move |this, _, cx| {
                         this.prefs.vault_filters.toggle(key, &v);
@@ -362,6 +371,9 @@ impl AppView {
                         cx.notify();
                     });
                     list = list.child(focusable_ext(row, &nav, id, Ring::Inset(RADIUS), Some(act), false, i == first_checked, cx));
+                }
+                if shown.end < values.len() {
+                    list = list.child(div().flex_none().h(r((values.len() - shown.end) as f32 * OPTION_ROW - 2.)));
                 }
                 let list = scroll_end(&nav, "modal-list", &handle, list).max_h(r(520.));
                 let count = chosen.len();

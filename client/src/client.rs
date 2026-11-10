@@ -11,7 +11,7 @@ use nostalgia_shared::{
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -38,6 +38,8 @@ pub enum UiEvent {
     State,
     Downloads,
     Toast { message: String, error: bool },
+    /// Images were loaded: redraw (the state did not change).
+    Media,
     /// Minimise the window (a game was started).
     Minimize,
     /// Bring the window back (the game exited).
@@ -130,7 +132,8 @@ pub(crate) struct Inner {
     pub busy_saves: HashSet<i64>,
     pub ready: bool,
     pub media_failed: HashSet<MediaKey>,
-    pub media_loading: HashSet<MediaKey>,
+    /// Images being downloaded, with when they were last asked for (shown).
+    pub media_loading: HashMap<MediaKey, Instant>,
     pub media: MediaCache<gpui_kit::RenderImage>,
 }
 
@@ -140,9 +143,6 @@ impl Inner {
             Some(s) => format!("{}|{}", s.server_url, s.user.id),
             None => String::new(),
         }
-    }
-    pub fn cache(&self) -> Cache {
-        self.cache.data().get(&self.cache_key()).cloned().unwrap_or_default()
     }
     pub fn cache_ref(&self) -> Option<&Cache> {
         self.cache.data().get(&self.cache_key())
@@ -182,7 +182,13 @@ pub struct Client {
     pub(crate) inner: Mutex<Inner>,
     ui_tx: Mutex<Option<futures_channel::mpsc::UnboundedSender<UiEvent>>>,
     state_pending: AtomicBool,
+    media_pending: AtomicBool,
+    /// Limits parallel image downloads; the rest wait (and are skipped once scrolled away).
+    media_slots: Arc<tokio::sync::Semaphore>,
+    catalog_pending: AtomicBool,
     snapshot: Mutex<Arc<ClientState>>,
+    /// Lookups of the current catalog, reused by snapshots until the catalog changes.
+    catalog: Mutex<Arc<Catalog>>,
     pub(crate) downloads_rt: Mutex<crate::downloads::DownloadRuntime>,
     pub(crate) launcher_rt: Mutex<crate::launcher::LauncherRuntime>,
     sse: Mutex<Option<tokio::task::AbortHandle>>,
@@ -228,7 +234,7 @@ impl Client {
             busy_saves: HashSet::new(),
             ready: false,
             media_failed: HashSet::new(),
-            media_loading: HashSet::new(),
+            media_loading: HashMap::new(),
             media: MediaCache::new(crate::media_cache::LIMIT),
         };
         let device = format!("{hostname} ({})", os.as_str());
@@ -247,7 +253,11 @@ impl Client {
             inner: Mutex::new(inner),
             ui_tx: Mutex::new(Some(ui_tx)),
             state_pending: AtomicBool::new(false),
+            media_pending: AtomicBool::new(false),
+            media_slots: Arc::new(tokio::sync::Semaphore::new(MEDIA_DOWNLOADS)),
+            catalog_pending: AtomicBool::new(false),
             snapshot: Mutex::new(Arc::new(ClientState::default())),
+            catalog: Mutex::new(Arc::new(Catalog::default())),
             downloads_rt: Mutex::new(Default::default()),
             launcher_rt: Mutex::new(Default::default()),
             sse: Mutex::new(None),
@@ -308,13 +318,34 @@ impl Client {
         self.snapshot.lock().unwrap().clone()
     }
 
+    /// Redraw soon because images arrived (batched like `emit_state`, without a new snapshot).
+    fn emit_media(self: &Arc<Self>) {
+        if self.media_pending.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let me = self.clone();
+        self.rt.spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            me.media_pending.store(false, Ordering::Release);
+            me.push_event(UiEvent::Media);
+        });
+    }
+
     fn rebuild_snapshot(&self) {
         let st = {
             let i = self.lock();
-            let c = i.cache();
+            let empty = Cache::default();
+            let c = i.cache_ref().unwrap_or(&empty);
+            let catalog = {
+                let mut cur = self.catalog.lock().unwrap();
+                if !cur.is_for(&c.games, &c.emulators) {
+                    *cur = Arc::new(Catalog::new(c.games.clone(), c.emulators.clone()));
+                }
+                cur.clone()
+            };
             let uid = i.user_id().unwrap_or(0).to_string();
             let mut save_sync = BTreeMap::new();
-            for e in &c.emulators {
+            for e in c.emulators.iter() {
                 let s = i.save_sync.data().get(&uid).and_then(|m| m.get(&e.id)).cloned().unwrap_or_default();
                 let latest = c.latest_saves.iter().find(|v| v.emulator_id == e.id).cloned();
                 save_sync.insert(e.id, (s, i.busy_saves.contains(&e.id), latest));
@@ -325,11 +356,12 @@ impl Client {
                 ready: i.ready,
                 session,
                 online: i.online,
-                catalog_games: c.games,
-                catalog_emulators: c.emulators,
-                library: c.library,
+                catalog,
+                library_games: c.library.games.iter().copied().collect(),
+                library_emulators: c.library.emulators.iter().copied().collect(),
+                library: c.library.clone(),
                 installed: i.installed.data().clone(),
-                playtime: c.playtime.into_iter().map(|p| (p.game_id, p)).collect(),
+                playtime: c.playtime.iter().map(|p| (p.game_id, p.clone())).collect(),
                 settings: i.settings.data().clone(),
                 running: i.running.clone(),
                 save_sync,
@@ -564,6 +596,7 @@ impl Client {
         if self.lock().session.data().session.is_none() {
             return false;
         }
+        let started = Instant::now();
         let t = Duration::from_secs(6);
         let r: Result<Value, ApiError> = async {
             self.json::<Value>(reqwest::Method::GET, "/health", None, None, t).await?;
@@ -571,6 +604,9 @@ impl Client {
             self.json::<Value>(reqwest::Method::GET, "/me", None, None, t).await
         }
         .await;
+        if std::env::var("NOSTALGIA_DEBUG").is_ok() {
+            eprintln!("[health] {:?} in {:?}", r.as_ref().map(|_| ()).map_err(|e| &e.message), started.elapsed());
+        }
         match r {
             Ok(_) => {
                 let was_offline = !self.lock().online;
@@ -596,6 +632,7 @@ impl Client {
         if self.lock().session.data().session.is_none() {
             return;
         }
+        let started = Instant::now();
         let r = tokio::try_join!(
             self.get::<Vec<GameSummary>>("/games"),
             self.get::<Vec<EmulatorSummary>>("/emulators"),
@@ -605,9 +642,12 @@ impl Client {
         );
         match r {
             Ok((games, emulators, library, playtime, latest_saves)) => {
+                if std::env::var("NOSTALGIA_DEBUG").is_ok() {
+                    eprintln!("[refresh] {} games, {} emulators in {:?}", games.len(), emulators.len(), started.elapsed());
+                }
                 self.lock().set_cache(|c| {
-                    c.games = games;
-                    c.emulators = emulators;
+                    c.games = Arc::new(games);
+                    c.emulators = Arc::new(emulators);
                     c.library = library;
                     c.playtime = playtime;
                     c.latest_saves = latest_saves;
@@ -625,7 +665,7 @@ impl Client {
 
     pub async fn refresh_latest_saves(self: &Arc<Self>) -> Result<Vec<SaveVersion>, ApiError> {
         if !self.is_online() {
-            return Ok(self.lock().cache().latest_saves);
+            return Ok(self.lock().cache_ref().map(|c| c.latest_saves.clone()).unwrap_or_default());
         }
         let latest: Vec<SaveVersion> = self.get("/saves").await?;
         self.lock().set_cache(|c| c.latest_saves = latest.clone());
@@ -697,8 +737,16 @@ impl Client {
                 self.emit_state();
             }
             ServerEvent::Catalog => {
+                // A library scan on the server sends many of these: fetch the catalog once they settle.
+                if self.catalog_pending.swap(true, Ordering::AcqRel) {
+                    return;
+                }
                 let me = self.clone();
-                self.rt.spawn(async move { me.refresh_all().await });
+                self.rt.spawn(async move {
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    me.catalog_pending.store(false, Ordering::Release);
+                    me.refresh_all().await;
+                });
             }
             ServerEvent::Save { emulator_id, version, .. } => {
                 self.lock().set_cache(|c| {
@@ -756,8 +804,15 @@ impl Client {
     pub async fn add_to_library(self: &Arc<Self>, kind: ItemKind, id: i64) -> Result<(), ApiError> {
         self.library_call(reqwest::Method::POST, kind.plural(), id).await
     }
+    /// Also cancels the item's download and uninstalls it from this device.
     pub async fn remove_from_library(self: &Arc<Self>, kind: ItemKind, id: i64) -> Result<(), ApiError> {
-        self.library_call(reqwest::Method::DELETE, kind.plural(), id).await
+        // Checked first, so nothing changes when the files can't be removed.
+        self.check_not_running(kind, id)?;
+        self.library_call(reqwest::Method::DELETE, kind.plural(), id).await?;
+        if let Some(job) = self.find_job(kind, id) {
+            self.cancel_download(&job.key);
+        }
+        self.uninstall(kind, id).await
     }
 
     // ------------------------------------------------------------------ installed items
@@ -987,12 +1042,24 @@ impl Client {
             if let Some(image) = i.media.get(&key, Instant::now()) {
                 return Some(Media::Image(image));
             }
-            if !i.online || i.media_failed.contains(&key) || !i.media_loading.insert(key.clone()) {
+            if !i.online || i.media_failed.contains(&key) {
+                return None;
+            }
+            // Already on its way: remember that it is still shown.
+            if i.media_loading.insert(key.clone(), Instant::now()).is_some() {
                 return None;
             }
         }
         let me = self.clone();
         self.rt.spawn(async move {
+            let Ok(_slot) = me.media_slots.clone().acquire_owned().await else { return };
+            // Scrolled away while waiting: skip it (it is requested again when it is shown again).
+            let wanted = me.lock().media_loading.get(&key).is_some_and(|t| t.elapsed() < MEDIA_STALE);
+            if !wanted {
+                me.lock().media_loading.remove(&key);
+                me.emit_media();
+                return;
+            }
             let ok: anyhow::Result<()> = async {
                 let path = format!("/games/{game_id}/media/{}", crate::util_url::encode(&key.2));
                 let url = me.api_url(&path, Some(&key.0))?;
@@ -1009,11 +1076,14 @@ impl Client {
             {
                 let mut i = me.lock();
                 i.media_loading.remove(&key);
+                if std::env::var("NOSTALGIA_DEBUG").is_ok() {
+                    eprintln!("[media] {} {} {:?}: {} waiting, {} MB in memory", key.1, key.2, ok.as_ref().err(), i.media_loading.len(), i.media.size() / 1_000_000);
+                }
                 if ok.is_err() {
                     i.media_failed.insert(key);
                 }
             }
-            me.emit_state();
+            me.emit_media();
         });
         None
     }
@@ -1023,6 +1093,11 @@ impl Client {
         self.lock().media.take_evicted()
     }
 }
+
+/// Parallel image downloads.
+const MEDIA_DOWNLOADS: usize = 6;
+/// A waiting image that was not shown for this long is no longer on screen.
+const MEDIA_STALE: Duration = Duration::from_millis(1500);
 
 /// Decodes an image for GPUI (BGRA), with its size in memory.
 fn decode_image(bytes: &[u8]) -> anyhow::Result<(gpui_kit::RenderImage, usize)> {
