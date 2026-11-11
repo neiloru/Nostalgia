@@ -24,8 +24,10 @@ services:
       - /path/to/library:/library   # games/{platform}/... and emulators/{platform}/...
       - ./database:/database        # SQLite database (keep it on a local disk, back it up!)
       - ./saves:/saves              # versioned cloud saves (back them up!)
-    # Files the server creates in the library (platform folders, igdb/ artwork) belong to
+      - ./metadata:/metadata        # IGDB metadata and artwork (can be downloaded again)
+    # Files the server creates (platform folders in the library, database, saves, metadata) belong to
     # this user. Uncomment and set your own UID:GID to avoid root-owned files; create ./config,
-    # ./database and ./saves first (mkdir config database saves) so that this user can write to them.
+    # ./database, ./saves and ./metadata first (mkdir config database saves metadata) so that this
+    # user can write to them.
     # user: "1000:1000"
     restart: unless-stopped

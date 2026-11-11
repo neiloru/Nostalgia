@@ -1,6 +1,6 @@
 //! Scaled-down copies of game media (`?w=<pixels>` on the media routes). Clients ask for images
 //! at the size they show them (a vault cover is a few hundred pixels wide), which saves them
-//! downloading and decoding the full image. The copies are kept in `<database>/thumbs`.
+//! downloading and decoding the full image. The copies are kept in `<metadata>/thumbs/<igdb id>/`.
 
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -22,10 +22,10 @@ pub fn width_param(w: Option<&String>) -> Option<u32> {
 
 /// The file of `src` scaled down to `width` pixels, made when missing or older than `src`. None
 /// when the image is not wider than that (the original is sent).
-pub async fn scaled(src: &Path, thumbs_dir: &Path, game_id: i64, name: &str, width: u32) -> anyhow::Result<Option<PathBuf>> {
+pub async fn scaled(src: &Path, thumbs_dir: &Path, igdb_id: i64, name: &str, width: u32) -> anyhow::Result<Option<PathBuf>> {
     // JPEG for photos; PNG and WebP may be transparent and become PNG.
     let jpeg = name.to_ascii_lowercase().ends_with(".jpg") || name.to_ascii_lowercase().ends_with(".jpeg");
-    let out = thumbs_dir.join(game_id.to_string()).join(format!("{name}.{width}.{}", if jpeg { "jpg" } else { "png" }));
+    let out = thumbs_dir.join(igdb_id.to_string()).join(format!("{name}.{width}.{}", if jpeg { "jpg" } else { "png" }));
     let src_time = tokio::fs::metadata(src).await?.modified()?;
     if let Ok(m) = tokio::fs::metadata(&out).await
         && m.modified()? >= src_time

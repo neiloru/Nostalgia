@@ -49,11 +49,12 @@ WORKDIR /app
 ENV NOSTALGIA_SETTINGS=/config/settings.yaml \
     NOSTALGIA_LIBRARY=/library \
     NOSTALGIA_DATABASE=/database \
-    NOSTALGIA_SAVES=/saves
+    NOSTALGIA_SAVES=/saves \
+    NOSTALGIA_METADATA=/metadata
 COPY --from=build /nostalgia-server /app/nostalgia-server
 COPY server/settings.example.yaml LICENSE ./
-# settings.yaml, the game library, the database and the cloud saves are separate volumes.
-VOLUME ["/config", "/library", "/database", "/saves"]
+# settings.yaml, the game library, the database, the cloud saves and the metadata are separate volumes.
+VOLUME ["/config", "/library", "/database", "/saves", "/metadata"]
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD curl -fs "http://127.0.0.1:${NOSTALGIA_PORT:-8080}/api/health" || exit 1

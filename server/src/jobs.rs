@@ -205,21 +205,13 @@ impl Jobs {
                 continue;
             }
             let dir = self.library.game_dir(&row.rel_path);
-            match self.igdb.download_into(&dir, row.igdb_id).await {
+            match self.igdb.download_into(&dir, &self.library.metadata_dir(row.igdb_id), row.igdb_id).await {
                 Ok(meta) => {
                     let json = serde_json::to_string_pretty(&meta).unwrap_or_default();
-                    let files = walk_files(&dir);
-                    let conn = self.db.conn();
-                    let _ = conn.execute(
+                    let _ = self.db.conn().execute(
                         "UPDATE games SET metadata_json = ?, metadata_status = 'ok', metadata_error = NULL, name = ?, updated_at = ? WHERE id = ?",
                         params![json, meta.name, now(), id],
                     );
-                    // Asset files changed the folder size.
-                    let _ = conn.execute(
-                        "UPDATE games SET size_bytes = ?, file_count = ? WHERE id = ?",
-                        params![files.iter().map(|f| f.size).sum::<u64>() as i64, files.len() as i64, id],
-                    );
-                    drop(conn);
                     self.status.lock().unwrap().metadata.done += 1;
                     changed = true;
                     log::info(format!("Metadata downloaded for {}", row.folder));
