@@ -76,6 +76,26 @@ impl AppView {
             meta = meta.child(dot()).child(div().flex().items_center().gap(r(5.)).text_color(warn()).font_weight(FontWeight::SEMIBOLD).child(icon("star", 14., warn())).child(format!("{}", rt.round() as i64)));
         }
         let genres = m.as_ref().map(|m| m.genres.clone()).unwrap_or(g.genres.clone());
+        // The same game on other platforms: pick the version to install or play.
+        let versions: Vec<(i64, String, bool)> =
+            state.catalog.versions(id).iter().map(|v| (v.id, v.platform_name.clone(), state.installed(ItemKind::Game, v.id).is_some())).collect();
+        let versions_el = (versions.len() > 1).then(|| {
+            let mut row = div().flex().flex_wrap().items_center().gap(r(8.)).child(div().mr(r(4.)).text_size(r(13.)).text_color(muted()).child("Platform"));
+            for (vid, name, installed) in versions {
+                let mut b = btn(format!("store:version:{vid}"), name).small();
+                if vid == id {
+                    b = b.primary();
+                }
+                if installed {
+                    b = b.icon("check");
+                }
+                row = row.child(b.render(&nav, action(move |this, _, cx| {
+                    this.store_sel = Some((ItemKind::Game, vid));
+                    cx.notify();
+                }), cx));
+            }
+            row
+        });
         let actions = if unavailable {
             div().text_color(muted()).child("Not available while offline.")
         } else {
@@ -89,6 +109,7 @@ impl AppView {
             .child(div().text_size(r(if narrow { 30. } else { 40. })).font_weight(FontWeight::SEMIBOLD).line_height(r(if narrow { 34. } else { 44. })).child(g.name.clone()))
             .child(meta)
             .child(div().flex().flex_wrap().gap(r(6.)).children(genres.into_iter().map(chip)))
+            .children(versions_el)
             .child(actions);
         if let Some(p) = &pt {
             info = info.child(div().text_size(r(13.)).text_color(muted()).child(format!("You played {}", fmt_duration(p.seconds))));

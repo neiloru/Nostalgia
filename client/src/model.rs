@@ -2,7 +2,7 @@
 //! field names of the Electron client, so both clients can share one data folder.
 //! Unknown fields are kept (`extra`) so switching back and forth never loses data.
 
-use nostalgia_shared::{EmulatorSummary, GameSummary, ItemKind, LibraryState, OsKey, PlaytimeEntry, RemoteFile, SaveVersion, User};
+use nostalgia_shared::{EmulatorSummary, GameSummary, ItemKind, LibraryState, OsKey, PlaytimeEntry, RemoteFile, SaveVersion, User, locale_compare};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -299,13 +299,36 @@ pub struct Catalog {
     pub emulators: Arc<Vec<EmulatorSummary>>,
     game_index: HashMap<i64, usize>,
     emulator_index: HashMap<i64, usize>,
+    /// IGDB id -> the games with that id when there are several (the same game released on
+    /// several platforms), by platform name. The app shows them as one game.
+    versions: HashMap<i64, Vec<usize>>,
 }
 
 impl Catalog {
     pub fn new(games: Arc<Vec<GameSummary>>, emulators: Arc<Vec<EmulatorSummary>>) -> Catalog {
         let game_index = games.iter().enumerate().map(|(i, g)| (g.id, i)).collect();
         let emulator_index = emulators.iter().enumerate().map(|(i, e)| (e.id, i)).collect();
-        Catalog { games, emulators, game_index, emulator_index }
+        let mut versions: HashMap<i64, Vec<usize>> = HashMap::new();
+        for (i, g) in games.iter().enumerate().filter(|(_, g)| g.igdb_id > 0) {
+            versions.entry(g.igdb_id).or_default().push(i);
+        }
+        versions.retain(|_, v| v.len() > 1);
+        for v in versions.values_mut() {
+            v.sort_by(|&a, &b| locale_compare(&games[a].platform_name, &games[b].platform_name).then(games[a].id.cmp(&games[b].id)));
+        }
+        Catalog { games, emulators, game_index, emulator_index, versions }
+    }
+    /// Indices of the games with this IGDB id, when there is more than one.
+    pub fn version_group(&self, igdb_id: i64) -> Option<&[usize]> {
+        self.versions.get(&igdb_id).map(Vec::as_slice)
+    }
+    /// The versions of a game (other platforms with the same IGDB id), itself included.
+    pub fn versions(&self, id: i64) -> Vec<&GameSummary> {
+        let Some(g) = self.game(id) else { return Vec::new() };
+        match self.version_group(g.igdb_id) {
+            Some(group) => group.iter().map(|&i| &self.games[i]).collect(),
+            None => vec![g],
+        }
     }
     /// Built from exactly these lists.
     pub fn is_for(&self, games: &Arc<Vec<GameSummary>>, emulators: &Arc<Vec<EmulatorSummary>>) -> bool {
