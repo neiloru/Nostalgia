@@ -103,12 +103,13 @@ To keep the saves somewhere else, mount that folder at `/saves`. Update with
 | `port`, `host` | listen address (default `0.0.0.0:8080`) |
 | `databaseDirectory` | SQLite database (default `./database`). Keep it on a local disk. **Back it up.** |
 | `savesDirectory` | versioned cloud saves (default `./saves`), any folder or mounted drive. **Back it up.** |
+| `metadataDirectory` | IGDB metadata, covers, artworks and screenshots (default `./metadata`). Kept out of the library: the server never writes into game folders. |
 | `allowRegistration` | allow users to register from the client (default `true`) |
 | `scanIntervalMinutes` | automatic rescans (default 30, `0` = off) |
 | `hasheousOnScheduledScan` | also hash files during automatic scans (default `false`) |
 
 Environment overrides: `NOSTALGIA_SETTINGS`, `NOSTALGIA_PORT`, `NOSTALGIA_LIBRARY`,
-`NOSTALGIA_DATABASE`, `NOSTALGIA_SAVES`, `IGDB_CLIENT_ID`, `IGDB_CLIENT_SECRET`.
+`NOSTALGIA_DATABASE`, `NOSTALGIA_SAVES`, `NOSTALGIA_METADATA`, `IGDB_CLIENT_ID`, `IGDB_CLIENT_SECRET`.
 
 ### Library layout
 
@@ -120,8 +121,6 @@ library/
         Final Fantasy VIII (USA) (Disc 1).cue
         Final Fantasy VIII (USA) (Disc 1).bin
         …                                   all files are sent to the client
-        igdb/                               written by the server
-          metadata.json  igdb-raw.json  cover.jpg  artwork-01.jpg  screenshot-01.jpg …
     ps2/
       Final Fantasy X [igdbid-418]/Final Fantasy X (USA, Canada).iso
   emulators/
@@ -129,6 +128,12 @@ library/
       PCSX2/
         emu.yaml
         pcsx2-qt.exe  pcsx2.AppImage  PCSX2.app/  …
+
+metadata/                                   metadataDirectory, written by the server
+  games/
+    425/                                    IGDB id
+      metadata.json  igdb-raw.json  cover.jpg  artwork-01.jpg  screenshot-01.jpg …
+  thumbs/                                   scaled copies for the clients
 ```
 
 * Platform folders use the [RomM folder names](https://docs.romm.app/latest/platforms/supported-platforms/)
@@ -141,7 +146,11 @@ library/
   one game, optionally let **Hasheous identify** them by hash (it usually returns the IGDB id),
   pick the IGDB entry and the files are *moved* into `{Name} [igdbid-ID]/`.
 * On every scan, new games get their IGDB metadata, cover, artworks and screenshots
-  downloaded in the background into the game's `igdb/` folder.
+  downloaded in the background into `metadataDirectory/games/{IGDB id}/`. Clients receive
+  them together with the game files (in `igdb/` of the install folder).
+* Servers before this version kept them in an `igdb/` folder inside each game folder. Such
+  folders are copied to the metadata folder on the next scan and ignored afterwards; you can
+  delete them from the library.
 * The optional Hasheous check (checkbox on the dashboard or per game) hashes every file
   (MD5/SHA1/CRC32) and looks it up at hasheous.org. This is information for the admin only.
 

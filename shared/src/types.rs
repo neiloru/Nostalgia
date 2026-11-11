@@ -52,7 +52,7 @@ pub struct Video {
     pub youtube_id: String,
 }
 
-/// Normalised IGDB metadata stored as `igdb/metadata.json` inside each game folder.
+/// Normalised IGDB metadata: `metadata.json` in the server's metadata folder, `igdb/metadata.json` in an install folder.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameMetadata {

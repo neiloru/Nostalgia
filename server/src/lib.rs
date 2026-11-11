@@ -69,6 +69,9 @@ pub fn create_server(settings_file: &Path) -> anyhow::Result<(Router, AppState)>
     }
 
     library.ensure_folders()?;
+    if let Err(e) = std::fs::create_dir_all(&settings.metadata_path) {
+        log::error(format!("Cannot create the metadata folder {}: {e}", settings.metadata_path.display()));
+    }
 
     let state = AppState { settings, db, auth, library, saves, events, jobs, igdb };
     let router = Router::new()

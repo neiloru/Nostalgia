@@ -3,7 +3,7 @@
 use crate::db::now;
 use crate::error::{HttpError, HttpResult};
 use crate::http::{AppState, AuthUser, JsonBody, attachment, device, send_file};
-use crate::library::{ASSET_DIR, parse_metadata, to_emulator_summary, to_game_summary, total_size, walk_files};
+use crate::library::{ASSET_DIR, parse_metadata, to_emulator_summary, to_game_summary, total_size, walk_files, walk_game_files};
 use crate::saves::StoreMeta;
 use crate::util::{decode_uri_component, id_param, js_num, js_str, resolve_inside};
 use axum::Json;
@@ -123,7 +123,9 @@ async fn game(State(s): State<AppState>, _a: AuthUser, Path(id): Path<String>) -
 
 async fn game_files(State(s): State<AppState>, _a: AuthUser, Path(id): Path<String>) -> HttpResult<Json<FileListing>> {
     let row = visible_game(&s, &id)?;
-    let files = walk_files(&s.library.game_dir(&row.rel_path));
+    // The game's files and its metadata and artwork (`igdb/<name>`, from the metadata folder).
+    let mut files = walk_game_files(&s.library.game_dir(&row.rel_path));
+    files.extend(s.library.metadata_files(row.igdb_id));
     Ok(Json(FileListing { id: row.id, folder: row.folder, total_bytes: total_size(&files), files }))
 }
 
@@ -147,7 +149,11 @@ async fn game_download(
     headers: HeaderMap,
 ) -> HttpResult<Response> {
     let row = visible_game(&s, &id)?;
-    send_inside(&s.library.game_dir(&row.rel_path), q.get("path").map(String::as_str).unwrap_or(""), &headers, true).await
+    let path = q.get("path").map(|p| p.replace('\\', "/")).unwrap_or_default();
+    match path.strip_prefix(&format!("{ASSET_DIR}/")) {
+        Some(name) => send_inside(&s.library.metadata_dir(row.igdb_id), name, &headers, true).await,
+        None => send_inside(&s.library.game_dir(&row.rel_path), &path, &headers, true).await,
+    }
 }
 
 /// `?w=<pixels>`: scaled down to that width (see `thumbs`).
@@ -162,11 +168,10 @@ async fn game_media(
     if !MEDIA_RE.is_match(&name) {
         return Err(HttpError::new(400, "Invalid media name"));
     }
-    let dir = s.library.game_dir(&row.rel_path).join(ASSET_DIR);
+    let dir = s.library.metadata_dir(row.igdb_id);
     let scaled = match crate::thumbs::width_param(q.get("w")) {
         Some(w) if dir.join(&name).is_file() => {
-            let thumbs = s.settings.database_path.join("thumbs");
-            crate::thumbs::scaled(&dir.join(&name), &thumbs, row.id, &name, w).await.unwrap_or_else(|e| {
+            crate::thumbs::scaled(&dir.join(&name), &s.library.thumbs_dir(), row.igdb_id, &name, w).await.unwrap_or_else(|e| {
                 crate::log::warn(format!("Could not scale {name} of game {}: {e}", row.id));
                 None
             })

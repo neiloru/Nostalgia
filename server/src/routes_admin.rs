@@ -94,6 +94,7 @@ async fn overview(State(s): State<AppState>, _a: Admin) -> Json<Value> {
         "libraryPath": s.settings.library_path,
         "databasePath": s.settings.database_path,
         "savesPath": s.settings.saves_path,
+        "metadataPath": s.settings.metadata_path,
         "savesStorage": s.saves.check(),
         "settingsFile": s.settings.file,
         "jobs": s.jobs.snapshot(),
@@ -220,7 +221,7 @@ async fn game(State(s): State<AppState>, _a: Admin, Path(raw): Path<String>) -> 
 async fn game_media(State(s): State<AppState>, _a: Admin, Path((raw, name)): Path<(String, String)>, headers: HeaderMap) -> HttpResult<Response> {
     let g = s.library.get_game(id(&raw)?);
     let Some(g) = g.filter(|_| MEDIA_RE.is_match(&name)) else { return Err(HttpError::not_found("Not found")) };
-    let file = s.library.game_dir(&g.rel_path).join("igdb").join(&name);
+    let file = s.library.metadata_dir(g.igdb_id).join(&name);
     if !file.is_file() {
         return Err(HttpError::not_found("Not found"));
     }

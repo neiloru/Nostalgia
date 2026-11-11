@@ -17,6 +17,8 @@ pub struct Settings {
     pub database_directory: String,
     /// Versioned cloud saves. Separate from the database.
     pub saves_directory: String,
+    /// IGDB metadata and artwork of the games. Separate from the library.
+    pub metadata_directory: String,
     pub allow_registration: bool,
     pub scan_interval_minutes: f64,
     /// Check file hashes against hasheous.org during scheduled scans.
@@ -26,6 +28,7 @@ pub struct Settings {
     pub library_path: PathBuf,
     pub database_path: PathBuf,
     pub saves_path: PathBuf,
+    pub metadata_path: PathBuf,
     /// "<database>/saves" of servers from before the split; moved to saves_path on start.
     pub legacy_saves_path: PathBuf,
     pub games_path: PathBuf,
@@ -54,6 +57,9 @@ host: 0.0.0.0
 databaseDirectory: ./database
 # Versioned cloud saves, one zip per upload. Never deleted.
 savesDirectory: ./saves
+# IGDB metadata, covers, artworks and screenshots of the games (and scaled copies for the
+# clients). Kept out of the game library; nothing is written to the library folders.
+metadataDirectory: ./metadata
 allowRegistration: true
 scanIntervalMinutes: 30
 hasheousOnScheduledScan: false
@@ -143,6 +149,7 @@ pub fn load_settings(file: &Path) -> anyhow::Result<Settings> {
         // Older settings files: "dataDirectory" held the database and the saves.
         database_directory: get("databaseDirectory").or_else(|| get("dataDirectory")).map(yaml_str).unwrap_or_else(|| "./database".into()),
         saves_directory: get("savesDirectory").map(yaml_str).unwrap_or_else(|| "./saves".into()),
+        metadata_directory: get("metadataDirectory").map(yaml_str).unwrap_or_else(|| "./metadata".into()),
         allow_registration: get("allowRegistration").map(yaml_bool).unwrap_or(true),
         scan_interval_minutes: 30.0,
         hasheous_on_scheduled_scan: get("hasheousOnScheduledScan").map(yaml_bool).unwrap_or(false),
@@ -150,6 +157,7 @@ pub fn load_settings(file: &Path) -> anyhow::Result<Settings> {
         library_path: PathBuf::new(),
         database_path: PathBuf::new(),
         saves_path: PathBuf::new(),
+        metadata_path: PathBuf::new(),
         legacy_saves_path: PathBuf::new(),
         games_path: PathBuf::new(),
         emulators_path: PathBuf::new(),
@@ -171,6 +179,9 @@ pub fn load_settings(file: &Path) -> anyhow::Result<Settings> {
     if let Some(v) = env("NOSTALGIA_SAVES") {
         s.saves_directory = v;
     }
+    if let Some(v) = env("NOSTALGIA_METADATA") {
+        s.metadata_directory = v;
+    }
     if let Some(v) = env("IGDB_CLIENT_ID") {
         s.igdb_client_id = v;
     }
@@ -190,6 +201,7 @@ pub fn load_settings(file: &Path) -> anyhow::Result<Settings> {
     s.library_path = crate::util::resolve(base, &s.library_directory);
     s.database_path = crate::util::resolve(base, &or(&s.database_directory, "./database"));
     s.saves_path = crate::util::resolve(base, &or(&s.saves_directory, "./saves"));
+    s.metadata_path = crate::util::resolve(base, &or(&s.metadata_directory, "./metadata"));
     s.legacy_saves_path = s.database_path.join("saves");
     s.games_path = s.library_path.join("games");
     s.emulators_path = s.library_path.join("emulators");
@@ -217,6 +229,17 @@ mod tests {
         let c = load_settings(&file).unwrap();
         assert_eq!(c.database_path, dir.path().join("db"));
         assert_eq!(c.saves_path, dir.path().join("elsewhere").join("saves"));
+    }
+
+    #[test]
+    fn metadata_has_its_own_folder() {
+        let (dir, file) = write("libraryDirectory: ./lib
+");
+        assert_eq!(load_settings(&file).unwrap().metadata_path, dir.path().join("metadata"));
+        let (dir, file) = write("libraryDirectory: ./lib
+metadataDirectory: ./art
+");
+        assert_eq!(load_settings(&file).unwrap().metadata_path, dir.path().join("art"));
     }
 
     #[test]

@@ -10,6 +10,7 @@ port: 8080
 host: 0.0.0.0
 databaseDirectory: ./database
 savesDirectory: ./saves
+metadataDirectory: ./metadata
 allowRegistration: true
 scanIntervalMinutes: 30
 hasheousOnScheduledScan: false

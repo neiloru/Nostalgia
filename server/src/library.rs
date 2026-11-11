@@ -17,6 +17,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 
 pub static IGDB_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\[igdbid-(\d+)\]").unwrap());
+/// The metadata and artwork of a game are kept in `<metadataDirectory>/games/<igdb id>/`, never in
+/// the library. Clients get them as `igdb/<name>` in the game's file listing. Older servers kept
+/// them in an `igdb/` folder inside the game folder: that folder is ignored (not sent, not counted)
+/// and its content is copied to the metadata folder once.
 pub const ASSET_DIR: &str = "igdb";
 
 #[derive(Debug, Clone)]
@@ -141,6 +145,12 @@ pub fn walk_files(dir: &Path) -> Vec<RemoteFile> {
     rec(dir, "", &mut out);
     out.sort_by(|x, y| locale_compare(&x.path, &y.path));
     out
+}
+
+/// The files of a game folder, without the `igdb/` folder of the old layout.
+pub fn walk_game_files(dir: &Path) -> Vec<RemoteFile> {
+    let prefix = format!("{ASSET_DIR}/");
+    walk_files(dir).into_iter().filter(|f| !f.path.starts_with(&prefix)).collect()
 }
 
 pub fn total_size(files: &[RemoteFile]) -> u64 {
@@ -293,6 +303,23 @@ impl Library {
         rel_path.split('/').fold(self.emulators_path().to_path_buf(), |p, s| p.join(s))
     }
 
+    /// Metadata and artwork of an IGDB game (shared by the games with that id, e.g. on several platforms).
+    pub fn metadata_dir(&self, igdb_id: i64) -> PathBuf {
+        self.settings.metadata_path.join("games").join(igdb_id.to_string())
+    }
+    /// Scaled copies of the artwork (see `thumbs`).
+    pub fn thumbs_dir(&self) -> PathBuf {
+        self.settings.metadata_path.join("thumbs")
+    }
+    /// The metadata files of a game as its file listing shows them (`igdb/<name>`).
+    pub fn metadata_files(&self, igdb_id: i64) -> Vec<RemoteFile> {
+        walk_files(&self.metadata_dir(igdb_id))
+            .into_iter()
+            .filter(|f| !f.path.contains('/') && !f.path.ends_with(".tmp"))
+            .map(|f| RemoteFile { path: format!("{ASSET_DIR}/{}", f.path), ..f })
+            .collect()
+    }
+
     pub fn get_game(&self, id: i64) -> Option<GameRow> {
         self.db.conn().query_row("SELECT * FROM games WHERE id = ?", [id], GameRow::from_row).optional().ok().flatten()
     }
@@ -331,6 +358,7 @@ impl Library {
         let mut unsorted = Vec::new();
         let mut seen_games = HashSet::new();
         let mut new_games = 0;
+        let mut copied = 0;
 
         let platforms: Vec<String> = std::fs::read_dir(self.games_path())?
             .flatten()
@@ -358,7 +386,7 @@ impl Library {
                 if let (true, Some(igdb_id)) = (is_dir, igdb) {
                     let rel = format!("{platform}/{name}");
                     seen_games.insert(rel.clone());
-                    let files = walk_files(&abs);
+                    let files = walk_game_files(&abs);
                     let size = total_size(&files) as i64;
                     let count = files.len() as i64;
                     let conn = self.db.conn();
@@ -397,13 +425,20 @@ impl Library {
                         }
                         drop(conn);
                     }
-                    self.load_local_metadata(&rel);
+                    copied += usize::from(self.load_local_metadata(&rel));
                 } else {
                     // Loose file or folder without an igdb id: needs to be imported by an admin.
                     let size = if is_dir { total_size(&walk_files(&abs)) } else { std::fs::metadata(&abs).map(|m| m.len()).unwrap_or(0) };
                     unsorted.push(UnsortedFile { platform: platform.clone(), path: name.clone(), size, is_dir, suggestion: suggest_title(&name) });
                 }
             }
+        }
+
+        if copied > 0 {
+            log::info(format!(
+                "Copied the metadata and artwork of {copied} games from their {ASSET_DIR}/ folders to {}. The {ASSET_DIR}/ folders in the library are no longer used and can be deleted.",
+                self.settings.metadata_path.display()
+            ));
         }
 
         // Mark vanished games as missing (never delete rows - user libraries reference them).
@@ -489,34 +524,37 @@ impl Library {
         })
     }
 
-    /// If igdb/metadata.json exists in the folder, load it into the DB (it is the source of truth).
-    pub fn load_local_metadata(&self, rel: &str) {
+    /// If the game's metadata.json exists in the metadata folder, load it into the DB (it is the
+    /// source of truth). True when it was first copied from the old `igdb/` folder of the game.
+    pub fn load_local_metadata(&self, rel: &str) -> bool {
         let row = self.db.conn().query_row("SELECT * FROM games WHERE rel_path = ?", [rel], GameRow::from_row).optional().ok().flatten();
-        let Some(row) = row else { return };
-        let file = self.game_dir(&row.rel_path).join(ASSET_DIR).join("metadata.json");
+        let Some(row) = row else { return false };
+        let dir = self.metadata_dir(row.igdb_id);
+        let file = dir.join("metadata.json");
+        let copied = !file.exists() && self.copy_old_metadata(&row, &dir);
         if !file.exists() {
             if row.metadata_status == "ok" {
                 self.reset_metadata(row.id);
             }
-            return;
+            return false;
         }
         let txt = match std::fs::read_to_string(&file) {
             Ok(t) => t,
             Err(e) => {
-                log::warn(format!("Invalid metadata.json in {rel}: {e}"));
-                return;
+                log::warn(format!("Invalid metadata.json of {rel}: {e}"));
+                return copied;
             }
         };
         let meta: Value = match serde_json::from_str(&txt) {
             Ok(v) => v,
             Err(e) => {
-                log::warn(format!("Invalid metadata.json in {rel}: {e}"));
-                return;
+                log::warn(format!("Invalid metadata.json of {rel}: {e}"));
+                return copied;
             }
         };
         if meta.get("igdbId").and_then(|v| v.as_f64()) != Some(row.igdb_id as f64) {
             self.reset_metadata(row.id);
-            return;
+            return copied;
         }
         if Some(&txt) != row.metadata_json.as_ref() || row.metadata_status != "ok" {
             let name = meta.get("name").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(String::from).unwrap_or(row.name.clone());
@@ -525,6 +563,36 @@ impl Library {
                 params![txt, name, row.id],
             );
         }
+        copied
+    }
+
+    /// Copy the `igdb/` folder of the old layout (inside the game folder) to `dir`, when it
+    /// belongs to the game's IGDB id. The old folder is only read.
+    fn copy_old_metadata(&self, row: &GameRow, dir: &Path) -> bool {
+        let old = self.game_dir(&row.rel_path).join(ASSET_DIR);
+        let Ok(txt) = std::fs::read_to_string(old.join("metadata.json")) else { return false };
+        let id = serde_json::from_str::<Value>(&txt).ok().and_then(|m| m.get("igdbId")?.as_f64());
+        if id != Some(row.igdb_id as f64) {
+            return false;
+        }
+        let copy = || -> std::io::Result<()> {
+            std::fs::create_dir_all(dir)?;
+            let mut names: Vec<String> = std::fs::read_dir(&old)?
+                .flatten()
+                .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|n| !n.ends_with(".tmp") && n != "metadata.json")
+                .collect();
+            // Last: an interrupted copy is made again on the next scan.
+            names.push("metadata.json".into());
+            for n in names {
+                let tmp = dir.join(format!("{n}.copy.tmp"));
+                std::fs::copy(old.join(&n), &tmp)?;
+                std::fs::rename(&tmp, dir.join(&n))?;
+            }
+            Ok(())
+        };
+        copy().map_err(|e| log::warn(format!("Could not copy {} to {}: {e}", old.display(), dir.display()))).is_ok()
     }
 
     pub fn reset_metadata(&self, id: i64) {
@@ -605,7 +673,7 @@ impl Library {
             }
             std::fs::rename(&src, &dst)?;
         }
-        // The old metadata in igdb/ belongs to the previous id; it will be refreshed (files overwritten, not deleted).
+        // The metadata of the new id is loaded from the metadata folder or downloaded.
         self.db.conn().execute(
             "UPDATE games SET folder = ?, rel_path = ?, igdb_id = ?, name = ?, metadata_status = 'pending', metadata_json = NULL, updated_at = ? WHERE id = ?",
             params![folder, format!("{}/{folder}", row.platform), igdb_id, title, now(), id],
@@ -643,6 +711,31 @@ impl Library {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn metadata_is_kept_out_of_the_library_and_copied_from_old_game_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("settings.yaml");
+        std::fs::write(&file, "libraryDirectory: ./lib\nmetadataDirectory: ./meta\n").unwrap();
+        let settings = Arc::new(crate::config::load_settings(&file).unwrap());
+        let lib = Library::new(Db::open(&settings.database_path).unwrap(), settings.clone());
+        let game = settings.games_path.join("gb").join("Dropzone [igdbid-1186]");
+        std::fs::create_dir_all(game.join("igdb")).unwrap();
+        std::fs::write(game.join("Dropzone.gb"), [0u8; 10]).unwrap();
+        // Old layout: metadata and artwork inside the game folder.
+        std::fs::write(game.join("igdb").join("metadata.json"), r#"{"igdbId":1186,"name":"Dropzone","cover":"cover.jpg"}"#).unwrap();
+        std::fs::write(game.join("igdb").join("cover.jpg"), [1u8; 5]).unwrap();
+
+        lib.scan().unwrap();
+        let row = lib.list_games(true).pop().unwrap();
+        assert_eq!((row.size_bytes, row.file_count), (10, 1), "the igdb/ folder is not part of the game");
+        assert_eq!(row.metadata_status, "ok");
+        let meta = settings.metadata_path.join("games").join("1186");
+        assert!(meta.join("cover.jpg").is_file() && meta.join("metadata.json").is_file());
+        assert!(game.join("igdb").join("cover.jpg").is_file(), "the old folder is left as it is");
+        let listed: Vec<String> = lib.metadata_files(1186).into_iter().map(|f| f.path).collect();
+        assert_eq!(listed, ["igdb/cover.jpg", "igdb/metadata.json"]);
+    }
 
     #[test]
     fn names_from_folders_and_files() {

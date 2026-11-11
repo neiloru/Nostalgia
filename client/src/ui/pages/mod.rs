@@ -126,7 +126,18 @@ impl AppView {
         let nav = self.nav.clone();
         let state = self.state.clone();
         let jobs = self.jobs.clone();
-        let st = item_status(&state, &jobs, item.kind(), item.id());
+        // A game on several platforms: its card stands for all versions.
+        let versions: Vec<GameSummary> = match item {
+            AnyItem::Game(g) => state.catalog.versions(g.id).into_iter().cloned().collect(),
+            AnyItem::Emu(_) => Vec::new(),
+        };
+        let mut st = item_status(&state, &jobs, item.kind(), item.id());
+        for v in versions.iter().filter(|v| v.id != item.id()) {
+            let o = item_status(&state, &jobs, ItemKind::Game, v.id);
+            st.installed |= o.installed;
+            st.in_library |= o.in_library;
+            st.job = st.job.or(o.job);
+        }
         let disabled = !state.online && !st.installed;
         let id: SharedString = format!("card:{}", item.key()).into();
         let focused = nav.borrow().ring(&id);
@@ -159,7 +170,12 @@ impl AppView {
         if focused {
             cover_wrap = cover_wrap.child(ring_overlay(Ring::Outer(RADIUS)).top(r(-7.)).left(r(-7.)).right(r(-7.)).bottom(r(-7.)));
         }
-        let mut sub = div().flex().gap(r(8.)).text_size(r(12.5)).line_height(r(18.)).text_color(muted()).mt(r(-4.)).child(item.platform().to_uppercase());
+        let platforms = match versions.len() {
+            0 | 1 => item.platform().to_uppercase(),
+            2 | 3 => versions.iter().map(|v| v.platform.to_uppercase()).collect::<Vec<_>>().join(" · "),
+            n => format!("{n} PLATFORMS"),
+        };
+        let mut sub = div().flex().gap(r(8.)).overflow_hidden().whitespace_nowrap().text_size(r(12.5)).line_height(r(18.)).text_color(muted()).mt(r(-4.)).child(platforms);
         match item {
             AnyItem::Game(g) => {
                 if let Some(y) = g.year {

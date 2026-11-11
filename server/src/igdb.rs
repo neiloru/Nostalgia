@@ -182,16 +182,15 @@ impl Igdb {
         rows.as_array().and_then(|a| a.first().cloned()).ok_or_else(|| anyhow::anyhow!("IGDB game {igdb_id} not found"))
     }
 
-    /// Download metadata + cover + artworks + screenshots into `<gameDir>/igdb/`.
-    /// Existing files are overwritten in place (never deleted).
-    pub async fn download_into(&self, game_dir: &Path, igdb_id: i64) -> anyhow::Result<GameMetadata> {
+    /// Download metadata + cover + artworks + screenshots of the game in `game_dir` into `dir`
+    /// (its folder in the metadata directory). Existing files are overwritten in place (never deleted).
+    pub async fn download_into(&self, game_dir: &Path, dir: &Path, igdb_id: i64) -> anyhow::Result<GameMetadata> {
         let g = self.fetch_game(igdb_id).await?;
-        let dir = game_dir.join("igdb");
         // Never recreate a game folder that was renamed or moved while the download was queued.
         if !game_dir.exists() {
             anyhow::bail!("Game folder no longer exists: {}", game_dir.display());
         }
-        tokio::fs::create_dir_all(&dir).await?;
+        tokio::fs::create_dir_all(dir).await?;
 
         let image_id = |v: &Value| v.get("image_id").and_then(|x| x.as_str()).map(String::from);
         let cover = match g.get("cover").and_then(image_id) {

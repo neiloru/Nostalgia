@@ -8,7 +8,7 @@ use crate::model::{Catalog, ClientState};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use nostalgia_shared::{GameSummary, ItemKind, LibraryState, locale_compare};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -135,7 +135,36 @@ impl VaultMemo {
             return refiltered;
         }
         let all = self.sorted.as_ref().map(|(_, v)| v.clone()).unwrap_or_default();
-        let mut items: Vec<Entry> = all.iter().copied().filter(|e| self.matches(state, *e, f, query)).collect();
+        let mut items: Vec<Entry> = Vec::new();
+        // A game on several platforms is one entry, at the place of its first version.
+        let mut grouped = HashSet::new();
+        for e in all.iter().copied() {
+            let group = match e {
+                Entry::Game(i) => c.version_group(c.games[i].igdb_id),
+                Entry::Emu(_) => None,
+            };
+            match (e, group) {
+                (Entry::Game(i), Some(group)) => {
+                    if !grouped.insert(c.games[i].igdb_id) {
+                        continue;
+                    }
+                    let matching: Vec<usize> = group.iter().copied().filter(|&j| self.matches(state, Entry::Game(j), f, query)).collect();
+                    let id = |j: &usize| c.games[*j].id;
+                    // Shown as: the installed version, else the one in the library, else the first.
+                    let shown = matching
+                        .iter()
+                        .find(|j| state.installed(ItemKind::Game, id(j)).is_some())
+                        .or_else(|| matching.iter().find(|j| state.in_library(ItemKind::Game, id(j))))
+                        .or_else(|| matching.iter().find(|j| **j == i))
+                        .or(matching.first());
+                    if let Some(&j) = shown {
+                        items.push(Entry::Game(j));
+                    }
+                }
+                _ if self.matches(state, e, f, query) => items.push(e),
+                _ => {}
+            }
+        }
         if !state.online {
             items.sort_by_key(|e| match *e {
                 Entry::Game(i) => state.installed(ItemKind::Game, c.games[i].id).is_none(),
@@ -213,8 +242,12 @@ mod tests {
     use std::sync::Arc;
 
     fn game(id: i64, name: &str, platform: &str, year: i64) -> GameSummary {
+        version(id, name, platform, year, 0)
+    }
+
+    fn version(id: i64, name: &str, platform: &str, year: i64, igdb_id: i64) -> GameSummary {
         serde_json::from_value(serde_json::json!({ "id": id, "kind": "game", "name": name, "platform": platform, "platformName": platform.to_uppercase(),
-            "folder": "f", "igdbId": 0, "sizeBytes": 0, "fileCount": 0, "hasCover": false, "hasArtwork": false, "year": year, "addedAt": "" }))
+            "folder": "f", "igdbId": igdb_id, "sizeBytes": 0, "fileCount": 0, "hasCover": false, "hasArtwork": false, "year": year, "addedAt": "" }))
         .unwrap()
     }
 
@@ -251,6 +284,39 @@ mod tests {
         let s2 = state(vec![game(1, "Zelda", "snes", 1991), game(4, "Contra III", "snes", 1992)]);
         assert!(!m.update(&s2, &f, ""));
         assert_eq!(names(&m, &s2), ["Contra III", "Zelda"]);
+    }
+
+    #[test]
+    fn a_game_on_several_platforms_is_one_entry() {
+        let mut s = state(vec![
+            version(1, "Rayman", "psx", 1995, 77),
+            version(2, "Rayman", "saturn", 1995, 77),
+            version(3, "Rayman", "jaguar", 1995, 77),
+            game(4, "Bomberman", "snes", 1993),
+        ]);
+        let ids = |m: &VaultMemo, s: &ClientState| -> Vec<i64> {
+            m.items.iter().map(|e| match e {
+                Entry::Game(i) => s.catalog.games[*i].id,
+                Entry::Emu(i) => s.catalog.emulators[*i].id,
+            }).collect()
+        };
+        let mut m = VaultMemo::default();
+        let mut f = Filters::default();
+        m.update(&s, &f, "");
+        // Shown as the version that comes first in the sort order.
+        assert_eq!(ids(&m, &s), [4, 1]);
+        // Versions in the order of their platform names: Jaguar, PSX, Saturn.
+        assert_eq!(s.catalog.versions(2).iter().map(|g| g.id).collect::<Vec<_>>(), [3, 1, 2]);
+        // A platform filter shows the version for that platform.
+        f.platform = vec!["saturn".into()];
+        m.update(&s, &f, "");
+        assert_eq!(ids(&m, &s), [2]);
+        // The version in the library is the one shown.
+        f.platform.clear();
+        s.library_games.insert(3);
+        s.library.games.push(3);
+        m.update(&s, &f, "");
+        assert_eq!(ids(&m, &s), [4, 3]);
     }
 
     #[test]
